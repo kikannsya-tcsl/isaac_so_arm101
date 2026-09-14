@@ -25,18 +25,23 @@ class LiftCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
+        # Learn log(std) instead of std directly so std stays positive.
+        # This avoids: RuntimeError: normal expects all elements of std >= 0.0
+        noise_std_type="log",
         actor_hidden_dims=[256, 128, 64],
         critic_hidden_dims=[256, 128, 64],
         activation="elu",
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
-        clip_param=0.2,
+        clip_param=0.2, 
         entropy_coef=0.006,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-4,
+        learning_rate=1.0e-5,
         schedule="adaptive",
         gamma=0.98,
         lam=0.95,

@@ -31,6 +31,11 @@ parser.add_argument(
     "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
 )
 parser.add_argument("--export_io_descriptors", action="store_true", default=False, help="Export IO descriptors.")
+
+# Original: Added arguments for resume training and loading a checkpoint
+parser.add_argument("--load_optimizer", action="store_true", default=False, help="Load optimizer state from checkpoint.")
+parser.add_argument("--inconsistent_reward", action="store_true", default=False, help="Use inconsistent reward function for training to reset critic output layer weights.")
+
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -169,6 +174,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # save resume path before creating a new log_dir
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
+        print(f"[INFO] Logging experiment in directory: {log_root_path}")
         resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
 
     # wrap for video recording
@@ -199,8 +205,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         # load previously trained model
-        runner.load(resume_path)
-
+        runner.load(resume_path, load_optimizer=args_cli.load_optimizer)
+        if args_cli.inconsistent_reward:
+            print("[INFO]: Resetting critic output layer weights for inconsistent reward function training.")
+            policy = runner.alg.policy if hasattr(runner.alg, "policy") else runner.alg.actor_critic 
+            linears = [m for m in policy.critic.modules() if isinstance(m, torch.nn.Linear)]
+            head = linears[-1]  # last linear layer of the critic
+            torch.nn.init.xavier_uniform_(head.weight)
+            torch.nn.init.zeros_(head.bias)
+            print(f"[INFO]: critic head re-initialized -> {head}")
+            
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
@@ -211,9 +225,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # close the simulator
     env.close()
 
+    return 0
 
 if __name__ == "__main__":
     # run the main function
+    print("start train!!!!!!")
     main()
     # close sim app
     simulation_app.close()

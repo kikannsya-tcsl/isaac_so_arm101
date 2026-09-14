@@ -16,6 +16,8 @@
 **/*.usda
 **/*.usdc
 **/*.usdz
+# Object USD file
+**/model/__init__.py 
 
 # Python
 .DS_Store

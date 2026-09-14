@@ -13,13 +13,14 @@ from dataclasses import MISSING
 import isaaclab.sim as sim_utils
 
 # from . import mdp
-import isaac_so_arm101.tasks.lift.mdp as mdp
+import isaac_so_arm101.tasks.lift_with_cam.mdp as mdp
 from isaaclab.assets import (
     ArticulationCfg,
     AssetBaseCfg,
     DeformableObjectCfg,
     RigidObjectCfg,
 )
+import isaaclab.envs.mdp as base_mdp
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -29,6 +30,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import TiledCameraCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
@@ -54,6 +56,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 
     # robots: will be populated by agent env cfg
     robot: ArticulationCfg = MISSING
+    # d405 cam
+    wrist_cam: TiledCameraCfg = MISSING
     # end-effector sensor: will be populated by agent env cfg
     ee_frame: FrameTransformerCfg = MISSING
     # target object: will be populated by agent env cfg
@@ -95,12 +99,12 @@ class CommandsCfg:
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(-0.1, 0.1),
-            pos_y=(0.1, 0.2),
+            pos_x=(0.3, 0.35),
+            pos_y=(-0.2, 0.2),
             pos_z=(0.2, 0.35),
-            roll=(0.0, 0.0),
+            roll=(90.0, 90.0),
             pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
+            yaw=(90.0, 90.0),
         ),
     )
 
@@ -117,23 +121,40 @@ class ActionsCfg:
 @configclass
 class ObservationsCfg:
     """Observation specifications for the MDP."""
-
     @configclass
-    class PolicyCfg(ObsGroup):
+    class PolicyObservationsCfg(ObsGroup):
         """Observations for policy group."""
 
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
+        rgbd = ObsTerm(func=mdp.rgbd_features, 
+                       params={"sensor_cfg": SceneEntityCfg("wrist_cam"),
+                               "max_range": 1.5,
+                               "verify_every": 5000,},
+        )
 
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
+    
+    @configclass
+    class CriticObsercationsCfg(ObsGroup):
+        """"特権情報を含む（Critic専用、非対称アクタークリティック）"""
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+        actions = ObsTerm(func=mdp.last_action)
+        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
 
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
     # observation groups
-    policy: PolicyCfg = PolicyCfg()
+    policy: PolicyObservationsCfg = PolicyObservationsCfg()
+    critic: CriticObsercationsCfg = CriticObsercationsCfg()
 
 
 @configclass
@@ -146,7 +167,7 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.1, 0.1), "y": (-0.2, 0.2), "z": (0.0, 0.0)},
+            "pose_range": {"x": (0.0, 0.2), "y": (-0.1, 0.2), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object", body_names="Object"),
         },
@@ -157,6 +178,14 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
+    object_in_view = RewTerm(
+    func=mdp.object_in_camera_view,
+    weight=0.5,                       # reaching/lift より1桁小さく
+    params={"std": 0.6, "margin": 2.0,
+            "object_cfg": SceneEntityCfg("object"),
+            "sensor_cfg": SceneEntityCfg("wrist_cam")},
+    )
+    
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.05}, weight=1.0)
 
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.025}, weight=15.0)
@@ -165,12 +194,6 @@ class RewardsCfg:
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": 0.025, "command_name": "object_pose"},
         weight=16.0,
-    )
-
-    object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.025, "command_name": "object_pose"},
-        weight=5.0,
     )
 
     # action penalty
@@ -217,7 +240,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=32, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()

@@ -95,12 +95,12 @@ class CommandsCfg:
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(-0.1, 0.1),
-            pos_y=(0.1, 0.2),
+            pos_x=(0.3, 0.35),
+            pos_y=(-0.2, 0.2),
             pos_z=(0.2, 0.35),
-            roll=(0.0, 0.0),
+            roll=(90.0, 90.0),
             pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
+            yaw=(90.0, 90.0),
         ),
     )
 
@@ -124,6 +124,14 @@ class ObservationsCfg:
 
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+
+        #カメラ
+        rgb   = ObsTerm(func=mdp.image,
+                        params={"sensor_cfg": SceneEntityCfg("wrist_cam"), "data_type": "rgb"})
+        depth = ObsTerm(func=mdp.image,
+                        params={"sensor_cfg": SceneEntityCfg("wrist_cam"),
+                                "data_type": "distance_to_image_plane"})
+
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
@@ -146,7 +154,7 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.1, 0.1), "y": (-0.2, 0.2), "z": (0.0, 0.0)},
+            "pose_range": {"x": (0.0, 0.2), "y": (-0.1, 0.2), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object", body_names="Object"),
         },
@@ -217,7 +225,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=128, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()

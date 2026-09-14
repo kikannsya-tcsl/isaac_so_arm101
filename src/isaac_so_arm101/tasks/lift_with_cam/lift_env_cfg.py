@@ -157,9 +157,16 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.05}, weight=1.0)
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"std": 0.30}, weight=1.0)
+    reaching_fine   = RewTerm(func=mdp.object_ee_distance, params={"std": 0.05}, weight=2.0)
+
+    tilting = RewTerm(func=mdp.object_tilt, weight=-3.0)
 
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.025}, weight=15.0)
+
+    disturbance = RewTerm(
+        func=mdp.object_disturbance, params={"minimal_height": 0.04}, weight=-0.5
+    ) 
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,

@@ -66,7 +66,7 @@ class LiftCubeCameraPPORunnerCfg(LiftCubePPORunnerCfg):
         init_noise_std=1.0,
         noise_std_type="log",
         # actor は 512+α 次元を受けるので入口を広げる
-        actor_hidden_dims=[512, 256, 128],
+        actor_hidden_dims=[1024, 256, 64],
         # critic は状態のみ（20次元程度）なので据え置きで十分
         critic_hidden_dims=[256, 128, 64],
         activation="elu",
@@ -107,7 +107,7 @@ class LiftBottleCameraPPORunnerCfg(LiftCubePPORunnerCfg):
         init_noise_std=0.5,
         noise_std_type="log",
         # actor は 512+α 次元を受けるので入口を広げる
-        actor_hidden_dims=[512, 256, 128],
+        actor_hidden_dims=[1024, 256, 64],
         # critic は状態のみ（20次元程度）なので据え置きで十分
         critic_hidden_dims=[256, 128, 64],
         activation="elu",

@@ -96,7 +96,7 @@ class CommandsCfg:
     object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,  # will be set by agent env cfg
-        resampling_time_range=(30, 30),
+        resampling_time_range=(10, 10),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.3, 0.35),
@@ -329,7 +329,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         """Post initialization."""
         # general settings
-        self.episode_length_s = 30 # 1エピソード60step(2Hz)
+        self.episode_length_s = 10 # 1エピソード60step(2Hz)
         self.viewer.eye = (2.5, 2.5, 1.5)
         # simulation settings
         self.drawing_freq = 60

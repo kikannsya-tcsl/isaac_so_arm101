@@ -335,7 +335,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         self.control_freq = 2 # 2Hzで制御信号を送信
         self.sim_freq = 200.0
         self.sim.dt = 1.0 / self.sim_freq
-        self.decimation = int(sim_freq / self.control_freq) 
+        self.decimation = int(self.sim_freq / self.control_freq) 
         self.sim.render_interval = self.decimation
 
         self.sim.physx.bounce_threshold_velocity = 0.2

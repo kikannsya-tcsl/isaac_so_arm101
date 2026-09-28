@@ -18,7 +18,7 @@ from isaaclab_rl.rsl_rl import (
 
 @configclass
 class LiftCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 24
+    num_steps_per_env = 30
     max_iterations = 1500
     save_interval = 50
     experiment_name = "lift"
@@ -59,7 +59,7 @@ class LiftCubeCameraPPORunnerCfg(LiftCubePPORunnerCfg):
     obs_groups = {"policy": ["policy"], "critic": ["critic"]}
 
     # --- バッチ長：num_envs が 4096 → 128 に落ちる分を rollout 長で補う ---
-    num_steps_per_env = 96
+    num_steps_per_env = 60
     max_iterations = 6000
 
     policy = RslRlPpoActorCriticCfg(
@@ -100,11 +100,11 @@ class LiftBottleCameraPPORunnerCfg(LiftCubePPORunnerCfg):
     obs_groups = {"policy": ["policy"], "critic": ["critic"]}
 
     # --- バッチ長：num_envs が 4096 → 128 に落ちる分を rollout 長で補う ---
-    num_steps_per_env = 96
+    num_steps_per_env = 60 # 2Hz x 30 sec/episode
     max_iterations = 6000
 
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.5,
+        init_noise_std=1.0,
         noise_std_type="log",
         # actor は 512+α 次元を受けるので入口を広げる
         actor_hidden_dims=[1024, 256, 64],

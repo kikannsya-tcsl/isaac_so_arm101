@@ -96,7 +96,7 @@ class CommandsCfg:
     object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,  # will be set by agent env cfg
-        resampling_time_range=(5.0, 5.0),
+        resampling_time_range=(30, 30),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.3, 0.35),
@@ -243,7 +243,7 @@ class RewardsCfg:
     )
     
     reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.6, "std": 0.30}, weight=1.0)  #初期学習 weight=1.0
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.6, "std": 0.05}, weight=1e2)  #初期学習 weight=2.0
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.6, "std": 0.05}, weight=2.0)  #初期学習 weight=2.0
 
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.05}, weight=15.0)
 
@@ -267,13 +267,13 @@ class RewardsCfg:
     tilting = RewTerm(func=mdp.object_tilt, weight=-1.5, params={"asset_cfg": SceneEntityCfg("object")})
 
     # action penalty
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 初期学習 weight=-1e-4
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-3) # 初期学習 weight=-1e-4
 
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-1, # 初期学習 weight=-1e-4
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    )
+    # joint_vel = RewTerm(
+    #     func=mdp.joint_vel_l2,
+    #     weight=-0.1, # 初期学習 weight=-1e-4
+    #     params={"asset_cfg": SceneEntityCfg("robot")},
+    # )
 
 
 @configclass
@@ -292,12 +292,17 @@ class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
     action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1, "num_steps": 10000}
     )
 
-    joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+    action_rate = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -10, "num_steps": 100000}
     )
+
+
+    # joint_vel = CurrTerm(
+    #     func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+    # )
 
 
 ##
@@ -324,11 +329,11 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         """Post initialization."""
         # general settings
-        self.decimation = 2
-        self.episode_length_s = 5.0
+        self.episode_length_s = 30 # 1エピソード60step(2Hz)
         self.viewer.eye = (2.5, 2.5, 1.5)
         # simulation settings
         self.sim.dt = 0.01  # 100Hz
+        self.decimation = int(round(2/self.sim.dt))  # 2Hzで制御信号を送信
         self.sim.render_interval = self.decimation
 
         self.sim.physx.bounce_threshold_velocity = 0.2

@@ -236,7 +236,7 @@ class RewardsCfg:
 
     object_in_view = RewTerm(
     func=mdp.object_in_camera_view,
-    weight=0.5,                       # reaching/lift より1桁小さく
+    weight=1e2,                       # reaching/lift より1桁小さく
     params={"std": 0.6, "margin": 2.0,
             "object_cfg": SceneEntityCfg("object"),
             "sensor_cfg": SceneEntityCfg("wrist_cam")},

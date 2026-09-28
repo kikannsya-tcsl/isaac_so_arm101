@@ -100,7 +100,7 @@ class LiftBottleCameraPPORunnerCfg(LiftCubePPORunnerCfg):
     obs_groups = {"policy": ["policy"], "critic": ["critic"]}
 
     # --- バッチ長：num_envs が 4096 → 128 に落ちる分を rollout 長で補う ---
-    num_steps_per_env = 60 # 2Hz x 30 sec/episode
+    num_steps_per_env = 20 # 2Hz x 10 sec/episode
     max_iterations = 6000
 
     policy = RslRlPpoActorCriticCfg(

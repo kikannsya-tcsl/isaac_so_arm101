@@ -41,19 +41,28 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
             # data_types=["rgb", "distance_to_image_plane"],
             data_types=["rgb", "distance_to_image_plane"],
             spawn=sim_utils.PinholeCameraCfg(
-                focal_length=1.93, horizontal_aperture=2.14,  # FOV 58°x58° (D405実機の垂直FOVに合わせ、正方形画像の中央クロップと一致させる)
-                clipping_range=(0.05, 2.0)),
+                focal_length=1.93, 
+                horizontal_aperture=2.14,
+                vertical_aperture=2.14,  # FOV 58°x58° (D405実機の垂直FOVに合わせ、正方形画像の中央クロップと一致させる)
+                clipping_range=(0.05, 1.5)),
             width=224, height=224,
             depth_clipping_behavior="max",
         )
 
         # override actions
+        # 初期姿勢(全関節0)は joint2 が下限0・joint3 が上限0 ちょうどにあるため、
+        # use_default_offset=True だと joint3 は正の出力がすべて上限で潰れて勾配が消え、
+        # 「joint3 が全く動かない方策」に収束した。オフセットを可動域の内側に置く。
+        # (joint2=1.0, joint3=-0.8 で EE ≈ (0.35, 0.0, 0.35)、コマンド領域の中心・ボトル上方)
+        # 初期姿勢(PIPER_CFG.init_state)は実機ホームに合わせて 0 のまま。
         self.actions.arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["joint1", "joint2", "joint3", "joint4", "joint5", "joint6" ],
-            # joint_names=["joint1", "joint2", "joint3", "joint5", "joint6" ],
             scale=0.5,
-            use_default_offset=True,
+            use_default_offset=False,
+            offset={"joint1": 0.0, "joint2": 1.0, "joint3": -0.8, "joint4": 0.0, "joint5": 0.0, "joint6": 0.0},
+            # 目標角を URDF のハード可動域内に制限(可動域外で目標が発散するのを防ぐ)
+            clip={"joint2": (0.0, 3.1415926), "joint3": (-2.9670597, 0.0)},
         )
         self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
             asset_name="robot",

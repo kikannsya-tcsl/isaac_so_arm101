@@ -79,7 +79,7 @@ class LiftCubeCameraPPORunnerCfg(LiftCubePPORunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,          # 視覚探索は難しくなるので気持ち上げる
+        entropy_coef=0.05,          # 視覚探索は難しくなるので気持ち上げる
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=3.0e-4,       # 観測正規化が入る前提で常識的な値に戻す
@@ -120,7 +120,7 @@ class LiftBottleCameraPPORunnerCfg(LiftCubePPORunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,          # 視覚探索は難しくなるので気持ち上げる
+        entropy_coef=0.05,          # 視覚探索は難しくなるので気持ち上げる
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=1.0e-4,       # 観測正規化が入る前提で常識的な値に戻す

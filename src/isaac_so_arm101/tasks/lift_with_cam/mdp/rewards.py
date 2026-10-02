@@ -403,3 +403,81 @@ def gripper_close_near_object(
     )
 
     return closing * proximity
+
+
+def gripper_closed_far_from_object(
+    env: ManagerBasedRLEnv,
+    far_distance: float,
+    lift_height: float,
+    std: float = 0.01,
+    surface_height: float = 0.0,
+    action_name: str = "gripper_action",
+    grasp_offset_z: float | None = None,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """物体から遠い位置でグリッパを閉じる行動を罰する。
+
+    戻り値は 0～1（1 = 遠いのに閉じる行動をとっている）。負の重みで使うこと。
+    物体近傍（far_distance 以内）と持ち上げ後は 0 を返すので、
+    gripper_close_near_object による「近くで閉じる」報酬とは干渉しない。
+
+    開閉の判定は指関節の実位置ではなく前回アクションで行う。
+    実位置だと開指令を出してから指が開き切るまでの数ステップも
+    罰が残り、行動との対応が曖昧になるため。
+
+    Args:
+        far_distance: これより遠いと罰の対象になる距離 [m]。
+            gripper_close_near_object の std (0.06) より外側に置くこと。
+        lift_height: 持ち上げ判定の高さ [m]。object_is_lifted と揃える。
+        std: far_distance 付近の遷移幅 [m]。0 ならステップ関数。
+        action_name: グリッパの BinaryJointPositionAction の term 名。
+        grasp_offset_z: 距離を測る狙い点のオフセット。object_ee_distance と同じ意味。
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+
+    # 狙い点（object_ee_distance と同じ定義）
+    if grasp_offset_z is None:
+        target_pos_w = obj.data.root_com_pos_w
+    else:
+        local_z_w = matrix_from_quat(
+            obj.data.root_link_quat_w
+        )[:, :, 2]
+        target_pos_w = (
+            obj.data.root_link_pos_w
+            + grasp_offset_z * local_z_w
+        )
+
+    ee_pos_w = ee_frame.data.target_pos_w[..., 0, :]
+
+    distance = torch.linalg.vector_norm(
+        target_pos_w - ee_pos_w,
+        dim=1,
+    )
+
+    # BinaryJointPositionActionでは負の値がclose
+    gripper_action = (
+        env.action_manager
+        .get_term(action_name)
+        .raw_actions[:, 0]
+    )
+
+    closing = (gripper_action < 0.0).to(distance.dtype)
+
+    # 遠さゲート
+    if std > 0.0:
+        far = torch.sigmoid(
+            (distance - far_distance) / std
+        )
+    else:
+        far = (distance > far_distance).to(distance.dtype)
+
+    # 持ち上げ後は罰しない
+    clearance = _bottom_clearance(env, object_cfg, surface_height)
+
+    on_ground = (
+        clearance < lift_height
+    ).to(dtype=distance.dtype)
+
+    return closing * far * on_ground

@@ -19,6 +19,7 @@ import isaac_so_arm101.scripts.rsl_rl.cli_args as cli_args # isort: skip
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
+parser.add_argument("--save_depth", action="store_true", default=False, help="Record video depth images during training.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
@@ -178,6 +179,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reset environment
     obs = env.get_observations()
     timestep = 0
+    depth_cam_step = 0
     # simulate environment
     while simulation_app.is_running():
         start_time = time.time()
@@ -192,6 +194,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length:
                 break
+
+        if args_cli.save_depth:
+            from isaac_so_arm101.utility.record_cam import save_camera_frame
+            depth_cam_step += 1
+            save_camera_frame(env, depth_cam_step, env_id=0, output_dir=os.path.join("record_depth"), save_interval=1, min_depth=0.07, max_depth=1.50)
 
         # time delay for real-time evaluation
         sleep_time = dt - (time.time() - start_time)

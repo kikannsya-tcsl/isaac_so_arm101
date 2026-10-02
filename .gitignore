@@ -53,3 +53,6 @@ logs/
 
 # Pre-Trained Checkpoints
 /.pretrained_checkpoints/
+
+# Recorded camera images
+record_depth/

@@ -236,16 +236,22 @@ class RewardsCfg:
 
     object_in_view = RewTerm(
     func=mdp.object_in_camera_view,
-    weight=1e2,                       # reaching/lift より1桁小さく
+    weight=1e1,                       # reaching/lift より1桁小さく
     params={"std": 0.6, "margin": 2.0,
             "object_cfg": SceneEntityCfg("object"),
             "sensor_cfg": SceneEntityCfg("wrist_cam")},
     )
     
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.6, "std": 0.30}, weight=1.0)  #初期学習 weight=1.0
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.6, "std": 0.05}, weight=2.0)  #初期学習 weight=2.0
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.30}, weight=1.0e-2)  #初期学習 weight=1.0
+    # reaching_object = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.1}, weight=2.0) #初期学習 weight=2.0
 
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.05}, weight=15.0)
+    gripper_closed_far = RewTerm(
+                        func=mdp.gripper_closed_far_from_object,
+                        params={"far_distance": 0.05, "std": 0.01, "lift_height": 0.05, "grasp_offset_z": 0.06},
+                        weight=-0.5,
+                        )
+
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.05}, weight=1.0)
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
@@ -260,18 +266,17 @@ class RewardsCfg:
     # )
 
     # Approach to the object slowly, to avoid overshooting and missing the object.
-    disturbance = RewTerm(
-    func=mdp.object_disturbance, params={"lift_height": 0.05, "std": 0.1, "distance_threshold": 0.2}, weight=-2.0
-    )
+    # disturbance = RewTerm(
+    # func=mdp.object_disturbance, params={"lift_height": 0.05, "std": 0.1, "distance_threshold": 0.05}, weight=-2.0
+    # )
 
-    tilting = RewTerm(func=mdp.object_tilt, weight=-1.5, params={"asset_cfg": SceneEntityCfg("object")})
-
-    # action penalty
+    # tilting = RewTerm(func=mdp.object_tilt, weight=-1.5, params={"asset_cfg": SceneEntityCfg("object")})
+    
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-3) # 初期学習 weight=-1e-4
 
     # joint_vel = RewTerm(
     #     func=mdp.joint_vel_l2,
-    #     weight=-0.1, # 初期学習 weight=-1e-4
+    #     weight=-1e-2, # 初期学習 weight=-1e-4
     #     params={"asset_cfg": SceneEntityCfg("robot")},
     # )
 
@@ -296,7 +301,7 @@ class CurriculumCfg:
     )
 
     action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -10, "num_steps": 100000}
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -10, "num_steps": 50000}
     )
 
 
@@ -316,6 +321,23 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
 
     # Scene settings
     scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=32, env_spacing=2.5)
+    
+    # Render settings
+    # Using bottle.usd which is contained transprancy
+
+
+    sim: sim_utils.SimulationCfg = sim_utils.SimulationCfg(
+            render=sim_utils.RenderCfg(
+                carb_settings={
+                    "/rtx/raytracing/fractionalCutoutOpacity": True,
+                    "/rtx/translucency/enabled": True,
+                    "/rtx/translucency/maxRefractionBounces": 6,
+                    "/rtx/translucency/reflectAtAllBounce": True,
+                    "/rtx/material/translucencyAsOpacity": False,
+                },
+            ),
+          )
+
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()

@@ -11,30 +11,115 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
-from isaaclab.assets import RigidObject
+from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers.manager_base import ManagerTermBase
 from isaaclab.managers.manager_term_cfg import ObservationTermCfg
+import isaaclab.utils.math as math_utils
 from isaaclab.utils.math import subtract_frame_transforms
 from isaaclab.sensors import TiledCamera
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
-
-def object_position_in_robot_root_frame(
-    env: ManagerBasedRLEnv,
+def ee_pose_in_robot_root_frame(
+    env,
+    only_quaternion: bool = False,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
-    """The position of the object in the robot's root frame."""
-    robot: RigidObject = env.scene[robot_cfg.name]
-    object: RigidObject = env.scene[object_cfg.name]
-    object_pos_w = object.data.root_pos_w
-    object_pos_b, _ = subtract_frame_transforms(
-        robot.data.root_state_w[:, :3], robot.data.root_state_w[:, 3:7], object_pos_w
+    """EE pose expressed in the robot root frame.
+
+    Returns:
+        (num_envs, 7):
+        [x, y, z, qw, qx, qy, qz]
+    """
+    robot: Articulation = env.scene[robot_cfg.name]
+
+    # robot root pose in world
+    root_pos_w = robot.data.root_pos_w
+    root_quat_w = robot.data.root_quat_w
+
+    # EE pose in world
+    ee_pos_w = robot.data.body_pos_w[:, ee_cfg.body_ids][:, 0]  # 1 body_id のみを想定
+    ee_quat_w = robot.data.body_quat_w[:, ee_cfg.body_ids][:, 0]  # 1 body_id のみを想定
+
+    # world -> robot root
+    ee_pos_b, ee_quat_b = subtract_frame_transforms(
+        root_pos_w,
+        root_quat_w,
+        ee_pos_w,
+        ee_quat_w,
     )
-    return object_pos_b
+
+    return torch.cat((ee_pos_b, ee_quat_b), dim=-1)
+
+def object_pose_in_robot_root_frame(
+    env,
+    only_quaternion: bool = True,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Object pose expressed in the robot root frame.
+
+    Returns:
+        (num_envs, 7):
+        [x, y, z, qw, qx, qy, qz]
+    """
+    robot: Articulation = env.scene[robot_cfg.name]
+    obj: RigidObject = env.scene[object_cfg.name]
+
+    root_pos_w = robot.data.root_pos_w
+    root_quat_w = robot.data.root_quat_w
+
+    obj_pos_w = obj.data.root_pos_w
+    obj_quat_w = obj.data.root_quat_w
+
+    obj_pos_b, obj_quat_b = math_utils.subtract_frame_transforms(
+        root_pos_w,
+        root_quat_w,
+        obj_pos_w,
+        obj_quat_w,
+    )
+
+    if only_quaternion:
+        return obj_quat_b
+    return torch.cat((obj_pos_b, obj_quat_b), dim=-1)
+
+def object_ee_relative_position(
+    env,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    ee_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Object position relative to EE, expressed in robot root frame.
+
+    Returns:
+        (num_envs, 3)
+    """
+    robot: Articulation = env.scene[robot_cfg.name]
+    obj: RigidObject = env.scene[object_cfg.name]
+
+    root_pos_w = robot.data.root_pos_w
+    root_quat_w = robot.data.root_quat_w
+
+    ee_pos_w = robot.data.body_pos_w[:, ee_cfg.body_ids][:, 0]  # 1 body_id のみを想定
+    obj_pos_w = obj.data.root_pos_w
+
+    # Both positions -> robot root frame
+    ee_pos_b, _ = math_utils.subtract_frame_transforms(
+        root_pos_w,
+        root_quat_w,
+        ee_pos_w,
+    )
+
+    obj_pos_b, _ = math_utils.subtract_frame_transforms(
+        root_pos_w,
+        root_quat_w,
+        obj_pos_w,
+    )
+
+    return obj_pos_b - ee_pos_b
 
 # (N,H,W,C) にブロードキャストする形で保持
 _IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 1, 1, 3)

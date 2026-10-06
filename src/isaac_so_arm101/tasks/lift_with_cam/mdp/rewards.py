@@ -353,39 +353,79 @@ def object_ee_distance_and_lifted(
 
 def gripper_close_near_object(
     env: ManagerBasedRLEnv,
-    std: float = 0.06,
+    std: float = 0.02,
+    axial_std: float = 0.04,
+    min_finger_pos: float = 0.005,
+    miss_scale: float = 0.0,
     action_name: str = "gripper_action",
     grasp_offset_z: float | None = None,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    gripper_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", joint_names=["piper_finger_joint7", "piper_finger_joint8"]
+    ),
 ) -> torch.Tensor:
-    """物体に近い場所でグリッパを閉じ続けることを報酬化する。
+    """ボトルを指の間に挟んだ状態でグリッパを閉じていることを報酬化する。
 
-    Note:
-        std=0.06 はボトル半径0.033の約2倍。ボトルは全高211 mmと縦に長いので、
-        重心から60 mm離れた「胴体の上下」でも報酬が出てしまう。
-        掴む高さを絞りたい場合は std を 0.04 程度に下げるか、
-        grasp_offset_z で狙い点を明示する。
+    戻り値は 0～1。次の3つの積で決まる。
+
+    1. closing   : 前回アクションが close（BinaryJointPositionAction は負が close）
+    2. proximity : 手先と狙い点の近さ。ボトル軸からの半径方向と軸方向を分けて評価する。
+                   球状の距離だと、ボトルの横（指の外側）で閉じても半径 33 mm の
+                   位置で exp(-(0.033/0.04)^2)≈0.5 と報酬の半分が出てしまうため、
+                   半径方向は std をボトル半径より小さくして「指の間に軸が来ている」
+                   ことを要求し、縦長の胴体に沿った軸方向は axial_std で緩めに許容する。
+    3. held      : close 指令にもかかわらず両指とも閉じ切っていない
+                   （= 何かを挟んで止まっている）。指を閉じ切ると関節位置は
+                   close_command (±0.001) まで戻るので、両指の |位置| が
+                   min_finger_pos を超えていれば物体で止められていると判定する。
+                   片指だけ止まる「横から押しているだけ」の状態は min で弾く。
+                   held でないときは miss_scale 倍（既定 0 = 空振りは無報酬）。
+
+    制御が 2 Hz（1ステップ 0.5 s）で、指の速度上限 0.2 m/s なら 50 mm のストロークは
+    同じステップ内で閉じ切るため、報酬計算時点で指位置は収束している前提でよい。
+
+    Args:
+        std: ボトル軸からの半径方向距離のスケール [m]。BOTTLE_RADIUS より小さくする。
+        axial_std: ボトル軸方向の狙い点からのずれのスケール [m]。
+        min_finger_pos: 「挟んでいる」と判定する各指関節の最小 |位置| [m]。
+            close_command (0.001) より十分大きく、ボトル把持時の指位置より小さくする。
+        miss_scale: held でない（空振り / 片指だけ当たっている）ときの報酬倍率。
+            初期学習で閉じる動作自体の誘導がほしい場合だけ 0.1～0.3 程度にする。
+        grasp_offset_z: object_ee_distance と同じ意味の狙い点オフセット。
+            None なら重心を狙い点にする（軸方向はリンク姿勢のローカルZ）。
+        gripper_cfg: 指関節。joint_names の順序は問わない（|位置| で評価する）。
     """
     obj: RigidObject = env.scene[object_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    robot = env.scene[gripper_cfg.name]
+
+    # ボトルのローカルZ軸（回転行列の第3列）
+    local_z_w = matrix_from_quat(
+        obj.data.root_link_quat_w
+    )[:, :, 2]
 
     if grasp_offset_z is None:
-        object_pos_w = obj.data.root_com_pos_w
+        target_pos_w = obj.data.root_com_pos_w
     else:
-        local_z_w = matrix_from_quat(
-            obj.data.root_link_quat_w
-        )[:, :, 2]
-        object_pos_w = (
+        target_pos_w = (
             obj.data.root_link_pos_w
             + grasp_offset_z * local_z_w
         )
 
     ee_pos_w = ee_frame.data.target_pos_w[..., 0, :]
 
-    distance = torch.linalg.vector_norm(
-        object_pos_w - ee_pos_w,
-        dim=1,
+    # 狙い点 -> 手先 をボトル軸方向と半径方向に分解
+    rel = ee_pos_w - target_pos_w
+    axial = (rel * local_z_w).sum(dim=-1)
+    radial = torch.linalg.vector_norm(
+        rel - axial.unsqueeze(-1) * local_z_w,
+        dim=-1,
+    )
+
+    proximity = torch.exp(
+        -torch.square(radial / std)
+        - torch.square(axial / axial_std)
     )
 
     # BinaryJointPositionActionでは負の値がclose
@@ -395,14 +435,17 @@ def gripper_close_near_object(
         .raw_actions[:, 0]
     )
 
-    closing = (gripper_action < 0.0).to(distance.dtype)
+    closing = (gripper_action < 0.0).to(proximity.dtype)
 
-    # 物体に近いほど閉動作の価値を高くする
-    proximity = torch.exp(
-        -torch.square(distance / std)
-    )
+    # 両指とも物体で止められているか
+    finger_pos = robot.data.joint_pos[:, gripper_cfg.joint_ids].abs()
+    held = (
+        finger_pos.min(dim=-1).values > min_finger_pos
+    ).to(proximity.dtype)
 
-    return closing * proximity
+    grasp_quality = held + miss_scale * (1.0 - held)
+
+    return closing * proximity * grasp_quality
 
 
 def gripper_closed_far_from_object(
@@ -428,7 +471,8 @@ def gripper_closed_far_from_object(
 
     Args:
         far_distance: これより遠いと罰の対象になる距離 [m]。
-            gripper_close_near_object の std (0.06) より外側に置くこと。
+            gripper_close_near_object が報酬を出す範囲（半径方向 std, 軸方向 axial_std）
+            より外側に置くこと。
         lift_height: 持ち上げ判定の高さ [m]。object_is_lifted と揃える。
         std: far_distance 付近の遷移幅 [m]。0 ならステップ関数。
         action_name: グリッパの BinaryJointPositionAction の term 名。

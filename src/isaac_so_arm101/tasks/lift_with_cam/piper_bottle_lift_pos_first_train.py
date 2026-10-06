@@ -21,7 +21,7 @@ from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaac_so_arm101.tasks.lift_with_cam.piper_lift_bottle_approach_slowly_env_cfg import LiftEnvCfg
+from isaac_so_arm101.tasks.lift_with_cam.piper_lift_bottle_first_train import LiftEnvCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 from isaac_so_arm101.robots.piper_description.piper import PIPER_CFG
 from isaac_so_arm101.model import MODEL_DIR
@@ -38,7 +38,6 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
         # Set the wrist camera
         self.scene.wrist_cam = TiledCameraCfg(
             prim_path="{ENV_REGEX_NS}/Robot/camera_depth_optical_frame/camera",
-            # data_types=["rgb", "distance_to_image_plane"],
             data_types=["rgb", "distance_to_image_plane"],
             spawn=sim_utils.PinholeCameraCfg(
                 focal_length=1.93, 

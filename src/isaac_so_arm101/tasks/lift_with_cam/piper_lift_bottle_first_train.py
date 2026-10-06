@@ -1,3 +1,4 @@
+
 # Copyright (c) 2024-2025, Muammer Bay (LycheeAI), Louis Le Lay
 # All rights reserved.
 #
@@ -127,7 +128,6 @@ class ObservationsCfg:
 
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
-        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
         rgbd = ObsTerm(func=mdp.rgbd_features, 
@@ -147,8 +147,10 @@ class ObservationsCfg:
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-    
+        ee_pose_in_root = ObsTerm(func=mdp.ee_pose_in_robot_root_frame)
+        object_pose_in_root = ObsTerm(func=mdp.object_pose_in_robot_root_frame)
+        object_ee_relative_pos = ObsTerm(func=mdp.object_ee_relative_position)
+
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
@@ -172,43 +174,6 @@ class EventCfg:
         },
     )
 
-    # randomize_gains = EventTerm(
-    # func=mdp.randomize_actuator_gains,
-    # mode="reset",
-    # params={
-    #     # 実際の関節名に合わせる
-    #     "asset_cfg": SceneEntityCfg(
-    #         "robot", joint_names=["joint[1-6]"]
-    #     ),
-    #     "stiffness_distribution_params": (0.9, 1.1),
-    #     "damping_distribution_params": (0.9, 1.1),
-    #     "operation": "scale",
-    #     "distribution": "uniform",
-    #     },
-    # )
-#     randomize_joint_dynamics = EventTerm(
-#     func=mdp.randomize_joint_parameters,
-#     mode="reset",
-#     params={
-#         "asset_cfg": SceneEntityCfg(
-#             "robot", joint_names=["joint[1-6]"]
-#         ),
-#         "friction_distribution_params": (0.8, 1.2),
-#         "armature_distribution_params": (0.9, 1.1),
-#         "operation": "scale",
-#         "distribution": "uniform",
-#     },
-# )
-
-    object_material = EventTerm(
-        func=mdp.randomize_rigid_body_material, mode="reset",
-        params={"asset_cfg": SceneEntityCfg("object", body_names=".*"),
-                "static_friction_range": (0.7, 1.3),
-                "dynamic_friction_range": (0.6, 1.0),
-                "restitution_range": (0.0, 0.1),
-                "num_buckets": 128},
-    )
-
     object_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass, mode="reset",
         params={"asset_cfg": SceneEntityCfg("object"),
@@ -217,74 +182,28 @@ class EventCfg:
                 "recompute_inertia": True},
     )
 
-    gripper_friction = EventTerm(
-        func=mdp.randomize_rigid_body_material,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=["gripper_link1", "gripper_link2"]),
-            "static_friction_range": (1.2, 1.2),
-            "dynamic_friction_range": (1.0, 1.0),
-            "restitution_range": (0.0, 0.0),
-            "num_buckets": 1,
-            "make_consistent": True,
-        },
-    )
-
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
-
-    object_in_view = RewTerm(
-    func=mdp.object_in_camera_view,
-    weight=5.0e-1,                       # reaching/lift より1桁小さく
-    params={"std": 0.6, "margin": 2.0,
-            "object_cfg": SceneEntityCfg("object"),
-            "sensor_cfg": SceneEntityCfg("wrist_cam")},
-    )
     
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.30}, weight=1.0e1)  #初期学習 weight=1.0
-    # reaching_object = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.1}, weight=2.0) #初期学習 weight=2.0
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.15}, weight=1.0)  #初期学習 weight=1.0
+    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.04}, weight=15.)  #初期学習 weight=1.0
 
-    gripper_closed_far = RewTerm(
-                        func=mdp.gripper_closed_far_from_object,
-                        params={"far_distance": 0.05, "std": 0.01, "lift_height": 0.05, "grasp_offset_z": 0.06},
-                        weight=-5.0)
-    gripper_closed_near = RewTerm(
-        func=mdp.gripper_close_near_object,
-        # 半径方向 std はボトル半径(0.033)より小さく: 指の間に軸が来たときだけ報酬
-        # 両指が物体で止まっている(held)ときのみ報酬、空振りは miss_scale 倍
-        params={"std": 0.02, "axial_std": 0.04, "min_finger_pos": 0.005, "miss_scale": 0.0, "grasp_offset_z": 0.06},
-        weight=5.0,
-    )
-
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.05}, weight=1.0e2)
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=1.0e2)
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "lift_height": 0.05, "command_name": "object_pose"},
+        params={"std": 0.3, "lift_height": 0.1, "command_name": "object_pose"},
         weight=1.6e2,
     )
 
-    # object_goal_tracking_fine_grained = RewTerm(
-    #     func=mdp.object_goal_distance,
-    #     params={"std": 0.05, "lift_height":  0.05, "command_name": "object_pose"},
-    #     weight=5.0,
-    # )
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 初期学習 weight=-1e-4
 
-    # Approach to the object slowly, to avoid overshooting and missing the object.
-    # disturbance = RewTerm(
-    # func=mdp.object_disturbance, params={"lift_height": 0.05, "std": 0.1, "distance_threshold": 0.05}, weight=-2.0
-    # )
-
-    tilting = RewTerm(func=mdp.object_tilt, weight=-15, params={"asset_cfg": SceneEntityCfg("object")})
-
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-1) # 初期学習 weight=-1e-4
-
-    # joint_vel = RewTerm(
-    #     func=mdp.joint_vel_l2,
-    #     weight=-1e-2, # 初期学習 weight=-1e-4
-    #     params={"asset_cfg": SceneEntityCfg("robot")},
-    # )
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-1e-2, # 初期学習 weight=-1e-4
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
 
 
 @configclass
@@ -306,14 +225,9 @@ class CurriculumCfg:
         func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1, "num_steps": 10000}
     )
 
-    action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -10, "num_steps": 50000}
+    joint_vel = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
     )
-
-
-    # joint_vel = CurrTerm(
-    #     func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
-    # )
 
 
 ##

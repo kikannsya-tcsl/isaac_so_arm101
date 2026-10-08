@@ -1,6 +1,5 @@
 # Virtual environments
 .venv
-uv.lock
 
 # C++
 **/cmake-build*/
@@ -57,4 +56,3 @@ logs/
 
 # Recorded camera images
 record_depth/
-

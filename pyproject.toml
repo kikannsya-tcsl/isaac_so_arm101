@@ -10,6 +10,7 @@ dependencies = [
     "isaaclab[all,isaacsim]==2.3.0",
     "torch==2.9.0",
     "torchvision==0.24.0",
+    "detectron2",
 ]
 
 [project.scripts]
@@ -29,6 +30,7 @@ override-dependencies = [
 [tool.uv.sources]
 torch = { index = "pytorch-cu130" }
 torchvision = { index = "pytorch-cu130" }
+detectron2 = { git = "https://github.com/facebookresearch/detectron2.git" }
 
 [[tool.uv.index]]
 name = "nvidia"
@@ -41,6 +43,7 @@ explicit = true
 
 [tool.uv.extra-build-dependencies]
 flatdict = ["setuptools<81"]
+detectron2 = [{ requirement = "torch", match-runtime = true }]
 
 [build-system]
 requires = ["uv_build>=0.8.21,<0.9.0"]

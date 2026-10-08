@@ -20,7 +20,7 @@ from isaaclab_rl.rsl_rl import (
 class LiftCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 30
     max_iterations = 1500
-    save_interval = 50
+    save_interval = 20
     experiment_name = "lift"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
@@ -123,7 +123,7 @@ class LiftBottleCameraPPORunnerCfg(LiftCubePPORunnerCfg):
         entropy_coef=0.05,          # 視覚探索は難しくなるので気持ち上げる
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-4,       # 観測正規化が入る前提で常識的な値に戻す
+        learning_rate=1.0e-4,      # 観測正規化が入る前提で常識的な値に戻す
         schedule="adaptive",
         gamma=0.98,
         lam=0.95,

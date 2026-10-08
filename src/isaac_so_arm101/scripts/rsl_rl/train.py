@@ -153,6 +153,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         log_dir += f"_{agent_cfg.run_name}"
     log_dir = os.path.join(log_root_path, log_dir)
 
+    # Write play.sh to replay easily.
+    with open(os.path.join('/',"workspace", "isaac_so_arm101", "play.sh"), "w") as f:
+        f.write(
+            f"uv run play --task {args_cli.task}  \\\n"+
+            f"    --num_envs $1 \\\n"+
+            f"    --enable_camera \\\n"+
+            f"    --checkpoint {os.path.join('/','workspace', 'isaac_so_arm101', log_dir, 'model_$2.pt')}\n"
+        )
+
     # set the IO descriptors output directory if requested
     if isinstance(env_cfg, ManagerBasedRLEnvCfg):
         env_cfg.export_io_descriptors = args_cli.export_io_descriptors

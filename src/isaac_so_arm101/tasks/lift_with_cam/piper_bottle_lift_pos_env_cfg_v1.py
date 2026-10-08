@@ -42,10 +42,10 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
             data_types=["rgb", "distance_to_image_plane"],
             spawn=sim_utils.PinholeCameraCfg(
                 focal_length=1.93, 
-                horizontal_aperture=2.14,
-                vertical_aperture=2.14,  # FOV 58°x58° (D405実機の垂直FOVに合わせ、正方形画像の中央クロップと一致させる)
+                horizontal_aperture=2.14 * 640 / 360,   # 正方画素を保つため縦アパーチャ x アスペクト比 (水平FOV ≈ 89°)
+                vertical_aperture=2.14,                 # 垂直FOV 58° (D405実機に合わせる)
                 clipping_range=(0.05, 1.5)),
-            width=224, height=224,
+            width=640, height=360,
             depth_clipping_behavior="max",
         )
 

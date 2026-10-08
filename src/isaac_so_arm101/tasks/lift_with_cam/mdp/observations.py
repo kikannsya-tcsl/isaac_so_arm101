@@ -194,7 +194,7 @@ class rgbd_features(ManagerTermBase):
         with torch.no_grad():
             _, _, ph, pw = backbone(torch.zeros(1, 4, cam_cfg.height, cam_cfg.width, device=env.device))["1"].shape
 
-        temperature = cfg.params.get("temperature", 1.0)
+        temperature = cfg.params.get("temperature", 0.1)
         self.model = MaskRCNNP3SpatialSoftmax(backbone, ph, pw, temperature).to(env.device).eval()
         for p in self.model.parameters():
             p.requires_grad_(False)

@@ -193,7 +193,7 @@ class RewardsCfg:
     reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.3}, weight=20.0)  #旧 std=0.16, weight=5.0
     reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.05}, weight=25.0)  #旧 std=0.08, weight=50.0
 
-    contact_course = RewTerm(func=mdp.object_in_collision_course, 
+    contact_course = RewTerm(func=mdp.object_in_contact_course, 
                                          params={
                                              "std_x": 0.1,
                                              "max_x": 0.5,

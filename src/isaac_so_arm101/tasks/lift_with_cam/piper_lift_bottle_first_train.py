@@ -185,25 +185,69 @@ class EventCfg:
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
-    
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.15}, weight=1.0)  #初期学習 weight=1.0
-    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.04}, weight=15.)  #初期学習 weight=1.0
 
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=1.0e2)
+    # Positive rewards for approching.
+    # 初期姿勢の手先は狙い点から ~0.25 m 離れている。std=0.16 ではそこで勾配がほぼ無く
+    # 「動かない」方策に収束したため、coarse を std=0.3 にして主たる誘導項にする。
+    # fine は最終の詰め専用（遠方では飽和するので重みを lift より小さく抑える）。
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.3}, weight=20.0)  #旧 std=0.16, weight=5.0
+    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.05}, weight=25.0)  #旧 std=0.08, weight=50.0
 
-    object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "lift_height": 0.1, "command_name": "object_pose"},
-        weight=1.6e2,
-    )
+    contact_course = RewTerm(func=mdp.object_in_collision_course, 
+                                         params={
+                                             "std_x": 0.1,
+                                             "max_x": 0.5,
+                                             "robot_cfg": SceneEntityCfg("robot", body_names=["link6"],joint_names=["piper_finger_joint7", "piper_finger_joint8"],),
+                                         }, weight=2.5e1)  #旧 weight=5.0e1
 
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 初期学習 weight=-1e-4
+    # Positive rewards for gripping.
+    # 狙い点は reaching_* と同じ grasp_offset_z=0.06 に揃える（None だと重心狙いになり、
+    # reaching が誘導する高さと軸方向に ~5 cm ずれて proximity がほぼ 0 になる）。
+    # miss_scale>0 で「狙い点付近で閉じる」こと自体にも小さく報酬を出し、held までの探索を誘導する。
+    closed_near_obj = RewTerm(
+        func=mdp.gripper_close_near_object,
+        params={
+            "std": 0.03,
+            "axial_std": 0.04,
+            "miss_scale": 0.2,
+            "grasp_offset_z": 0.06,
+            "gripper_cfg": SceneEntityCfg("robot", joint_names=["piper_finger_joint7", "piper_finger_joint8"]),
+        },
+        weight=5.0e1,
+        )   
+
+
+    # Penalty rewards
+    object_tilt = RewTerm(func=mdp.object_tilt, weight=-1.5)  # 初期学習 weight=-1.0
+
+    # -1e4 だと1回の落下(×dt=0.5 で -5000)がエピソード中の接近報酬の総和を大きく上回り、
+    # 「ボトルに近づかない」方策が最適になっていた。終了条件でも打ち切られるので罰は控えめにする。
+    object_dropping = RewTerm(
+            func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")},
+            weight=-1.0e2,
+        )
+
+    # 探索ノイズ由来のペナルティが接近報酬を埋もれさせないよう、初期は小さくする
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 旧 weight=-1e-3
 
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-1e-2, # 初期学習 weight=-1e-4
+        weight=-1e-4, # 旧 weight=-1e-2
         params={"asset_cfg": SceneEntityCfg("robot")},
+    )   
+
+
+    # Objective rewards
+    # 接近 < 把持 < 持ち上げ ≦ 目標追従 の順に大きくし、「近くで待機」より「掴んで上げる」を得にする
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=2.0e2)  #旧 weight=1.0e2
+
+    goal_tracking = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.3, "lift_height": 0.1, "command_name": "object_pose"},
+        weight=2.0e2,  #旧 weight=1.6e2
     )
+
+    
 
 
 @configclass
@@ -221,12 +265,14 @@ class TerminationsCfg:
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
+    # num_steps は env ステップ数（20 step/iter）。旧値 10000 = iter 500 で、接近を覚える前に
+    # -0.1 が効いて報酬が崩壊したため、把持・持ち上げ習得後（~iter 3000）に -1e-2 へ上げる。
     action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-2, "num_steps": 60000}
     )
 
     joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-2, "num_steps": 60000}
     )
 
 

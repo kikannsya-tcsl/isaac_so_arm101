@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -144,11 +145,11 @@ def object_tilt(
 ) -> torch.Tensor:
     """
     0 = 直立
-    1 = 真横
+    1 = 真横（横転）以上の傾き。倒立側も1で飽和させる
 
-    ボトルのローカルZ軸とワールドZ軸のずれを評価する。
-    全高211 mmに対して底面径66.5 mmと細長いので、キューブより
-    転倒しやすい。重みはキューブ用より強めに設定するとよい。
+    ボトルのローカルZ軸とワールドZ軸のなす角 θ = arccos(up_z) を求め、
+    θ / (π/2) を返す。転倒角に比例する（45°で0.5）。
+    負の重みで使うと横転時に報酬が最小。
     """
     obj: RigidObject = env.scene[asset_cfg.name]
 
@@ -160,7 +161,11 @@ def object_tilt(
     # ローカルZ軸のワールドZ成分
     up_z = rotation_matrix[:, 2, 2]
 
-    return (1.0 - up_z).clamp(0.0, 2.0) * 0.5
+    # 数値誤差で|up_z|>1になるとacosがNaNを返すのでクランプする
+    tilt_angle = torch.acos(up_z.clamp(-1.0, 1.0))  # [rad], 0〜π
+
+    # 直立(0rad)で0、真横(π/2)で1、それ以上傾いても1のまま
+    return (tilt_angle / (0.5 * torch.pi)).clamp(0.0, 1.0)
 
 
 def object_is_lifted(
@@ -272,6 +277,120 @@ def object_ee_distance(
     )
 
     return 1.0 - torch.tanh(distance / std)
+
+def object_in_contact_course(
+    env: ManagerBasedRLEnv,
+    std_x: float = 0.10,
+    max_x: float = 0.07,
+    mouth_offset: float = 0.07,
+    opening_width: float | None = 0.10,
+    pad_thickness: float = 0.007,
+    lateral_margin: float = 0.005,
+    height_margin: float = 0.02,
+    max_tilt: float = 0.6,
+    k: float = 0.005,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", body_names=["link6"],
+        joint_names=["piper_finger_joint7", "piper_finger_joint8"],
+    ),
+) -> torch.Tensor:
+    """
+    ボトルの軸が指の間に入るように接近しているかを報酬化する。
+
+    グリッパ座標系（右手系）と link6 の軸の対応:
+        x_g = link6 +z : 接近方向（link6 からグリッパへ向かう向き）
+        y_g = link6 +y : 指の開閉方向（指間の線分の向き）。
+                         URDF 上 flange_link / gripper_base は link6 と同じ姿勢で、
+                         joint7 (q>0) は -y、joint8 (q<0) は +y へ開く
+        z_g = link6 -x : x_g × y_g。D405 が取り付けられている側
+                         （camera_joint は gripper_base の x=-0.0425）
+
+    面A = 指間の線分を x_g 方向に掃いた面 (z_g = 0)
+    面B = 指間の線分を z_g 方向に掃いた面 (x_g = 0)。原点は link6 から
+          +z 方向に mouth_offset の位置（指の付け根）に置く。
+
+    ボトルを円柱とみなし、面Aで切った断面（傾いていれば楕円）について
+    「面Aがボトル胴体を切っている」「断面が指の間に収まる」「断面が面Bより前方」
+    の3条件をゲートとして掛け合わせ、面Bからの距離で整形した値を返す。
+    戻り値は 0～1。
+
+    Args:
+        std_x: 前方距離 d（面Bから断面の手前端までの x_g 距離）の整形スケール [m]。
+            報酬は 1 - tanh(d / std_x) で、指の付け根に近いほど大きい。
+        max_x: 断面中心の x_g 座標（面Bからの距離）の上限 [m]。これより遠いと 0。
+            硬判定で、k の影響を受けない。断面中心は少なくとも half_x（直立時は
+            BOTTLE_RADIUS）だけ面Bより前にないと前方ゲートを通らないので、
+            実際に報酬が出るのは half_x <= p_x < max_x の範囲になる。
+        mouth_offset: link6 原点から面B（指の付け根）までの、link6 +z 方向の距離 [m]。
+        opening_width: 指の開口幅 [m]。既定は全開時の値で固定し、把持のために
+            閉じても報酬が消えないようにする。None なら現在の指関節位置
+            |q7| + |q8|（指リンク原点間の距離）を使い、開いたまま接近することも
+            要求する（閉じた瞬間に報酬が消える点に注意）。
+        pad_thickness: 指1本あたりのパッド厚 [m]。開口幅から 2 倍を差し引いて
+            指内面間の実効幅にする。
+        lateral_margin: 断面の端と、近い側の指内面との間に要求する隙間 [m]。
+            条件は |p_y| + half_y + lateral_margin <= (opening_width - 2*pad_thickness) / 2。
+            指先がボトルの縁に当たって押し倒すのを防ぐ。
+        height_margin: 面Aがボトルを切る位置の、底面・上端それぞれからの最小距離 [m]。
+            ボトル軸に沿って測る（世界の鉛直ではない）。縁での把持、指と机の干渉、
+            端で断面が欠けて半幅の式が成り立たなくなる領域を除外する。
+        max_tilt: グリッパの z_g とボトル軸のなす角の許容値 [rad]。これを超えると
+            面Aがボトル軸とほぼ平行になり交点が定まらないので、硬判定で 0 にする。
+        k: 各ゲート（sigmoid）の遷移幅 [m]。境界ちょうどでゲート値 0.5、
+            およそ ±k で 0～1 に遷移する。0 ならステップ関数（硬判定）。
+        object_cfg: ボトルの RigidObject。
+        robot_cfg: body_names に link6、joint_names に指関節2本を指定したもの。
+            既定値はマネージャに解決されず body_ids が slice のままになるため、
+            RewTermCfg の params に必ず明示的に渡すこと。
+    """
+    robot = env.scene[robot_cfg.name]
+    obj: RigidObject = env.scene[object_cfg.name]
+
+    def gate(margin):
+        return torch.sigmoid(margin / k) if k > 0 else (margin > 0).float()
+
+    # グリッパ座標系 (列 = x_g, y_g, z_g) を link6 から構成
+    bid = robot_cfg.body_ids[0]
+    R6 = matrix_from_quat(robot.data.body_link_quat_w[:, bid])
+    x_g = R6[:, :, 2]   # link6 +z: 接近方向
+    y_g = R6[:, :, 1]   # link6 +y: 指の開閉方向
+    z_g = -R6[:, :, 0]  # link6 -x: x_g × y_g
+    R_g = torch.stack([x_g, y_g, z_g], dim=-1)
+    origin = robot.data.body_link_pos_w[:, bid] + mouth_offset * x_g
+
+    # ボトル軸と底面中心をグリッパ座標へ
+    a_w = matrix_from_quat(obj.data.root_link_quat_w)[:, :, 2]
+    bottom_w = obj.data.root_link_pos_w - ORIGIN_TO_BOTTOM * a_w
+    a = torch.einsum("nij,ni->nj", R_g, a_w)
+    b = torch.einsum("nij,ni->nj", R_g, bottom_w - origin)
+
+    # 面A(z_g=0)との交点
+    cos_min = math.cos(max_tilt)
+    aligned = (a[:, 2].abs() > cos_min).float()
+    a_z = torch.where(a[:, 2] >= 0, 1.0, -1.0) * a[:, 2].abs().clamp(min=cos_min)
+    s = -b[:, 2] / a_z
+    p = b + s.unsqueeze(-1) * a
+    hit_a = gate(s - height_margin) * gate(BOTTLE_HEIGHT - height_margin - s)
+
+    # 斜め断面（楕円）の半幅
+    half_y = BOTTLE_RADIUS * torch.sqrt(a[:, 1] ** 2 + a_z ** 2) / a_z.abs()
+    half_x = BOTTLE_RADIUS * torch.sqrt(a[:, 0] ** 2 + a_z ** 2) / a_z.abs()
+
+    # 指の間
+    if opening_width is None:
+        w = robot.data.joint_pos[:, robot_cfg.joint_ids].abs().sum(-1)
+    else:
+        w = torch.full_like(s, opening_width)
+    w = w - 2.0 * pad_thickness
+    between = gate(0.5 * w - half_y - p[:, 1].abs() - lateral_margin)
+
+    # 面Bより前方
+    d = p[:, 0] - half_x
+    front = gate(d) * (p[:, 0] < max_x).float()
+    shaping = 1.0 - torch.tanh(d.clamp(min=0.0) / std_x)
+
+    return aligned * hit_a * between * front * shaping
 
 
 def object_goal_distance(

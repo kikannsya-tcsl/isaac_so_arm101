@@ -50,6 +50,9 @@ def main():
     print(f"[INFO]: Gym action space: {env.action_space}")
     # reset environment
     env.reset()
+    base_env = env.unwrapped
+    step = 0
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
@@ -57,8 +60,18 @@ def main():
             # compute zero actions
             actions = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
             # apply actions
-            env.step(actions)
-
+            obs, rew, terminated, truncated, extras = env.step(actions)
+            
+            if step % 10 == 0:
+                print(f"\n===== step {step}  total reward(env0) = {rew[0].item():.4f} =====")
+                # 報酬：各項の値（weight 掛け済み、dt は掛けない）
+                for name, val in base_env.reward_manager.get_active_iterable_terms(0):
+                    print(f"  [rew] {name:28s} {val[0]: .4f}")
+                # 観測：critic グループの各項
+                for name, val in base_env.observation_manager.get_active_iterable_terms(0):
+                    if name.startswith("critic-"):
+                        print(f"  [obs] {name:40s} {[round(v, 3) for v in val]}")
+            step += 1
     # close the simulator
     env.close()
 

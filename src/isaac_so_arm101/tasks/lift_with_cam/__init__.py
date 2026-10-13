@@ -27,13 +27,21 @@ gym.register(
 )
 
 gym.register(
-    id="Isaac-Piper-Lift-Bottle-With-Camera-v0",
+    id="Piper-Lift-Bottle-With-Camera-phase1",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.piper_bottle_lift_pos_first_train:PiperLiftCubeEnvCfg",
+        "env_cfg_entry_point": f"{__name__}.piper_lift_bottle_env_pos:PiperLiftEnvCfgP1",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:LiftBottleCameraPPORunnerCfg", 
     },
     disable_env_checker=True,
 )
 
-
+gym.register(
+    id="Test-piper-Lift",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.piper_test_train:PiperLiftCubeEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:LiftBottleCameraPPORunnerCfg", 
+    },
+    disable_env_checker=True,
+)

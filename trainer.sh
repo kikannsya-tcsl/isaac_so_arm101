@@ -9,8 +9,9 @@
 
 num=${1:-2000}
 
-uv run train --task Isaac-Piper-Lift-Bottle-With-Camera-v0 \
+uv run train --task Piper-Lift-Bottle-With-Camera-phase1 \
 --headless \
---num_envs 256 \
+--num_envs 32 \
 --max_iterations $num \
 --enable_camera \
+

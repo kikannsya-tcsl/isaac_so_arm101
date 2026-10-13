@@ -25,9 +25,9 @@ import isaaclab.envs.mdp as base_mdp
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
-from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
@@ -120,6 +120,12 @@ class ActionsCfg:
 
 
 @configclass
+class RewardsCfg:
+    """Reward terms for the MDP."""
+    pass
+
+
+@configclass
 class ObservationsCfg:
     """Observation specifications for the MDP."""
     @configclass
@@ -183,74 +189,6 @@ class EventCfg:
     )
 
 @configclass
-class RewardsCfg:
-    """Reward terms for the MDP."""
-
-    # Positive rewards for approching.
-    # 初期姿勢の手先は狙い点から ~0.25 m 離れている。std=0.16 ではそこで勾配がほぼ無く
-    # 「動かない」方策に収束したため、coarse を std=0.3 にして主たる誘導項にする。
-    # fine は最終の詰め専用（遠方では飽和するので重みを lift より小さく抑える）。
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.3}, weight=20.0)  #旧 std=0.16, weight=5.0
-    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.05}, weight=25.0)  #旧 std=0.08, weight=50.0
-
-    contact_course = RewTerm(func=mdp.object_in_contact_course, 
-                                         params={
-                                             "std_x": 0.1,
-                                             "max_x": 0.5,
-                                             "robot_cfg": SceneEntityCfg("robot", body_names=["link6"],joint_names=["piper_finger_joint7", "piper_finger_joint8"],),
-                                         }, weight=2.5e1)  #旧 weight=5.0e1
-
-    # Positive rewards for gripping.
-    # 狙い点は reaching_* と同じ grasp_offset_z=0.06 に揃える（None だと重心狙いになり、
-    # reaching が誘導する高さと軸方向に ~5 cm ずれて proximity がほぼ 0 になる）。
-    # miss_scale>0 で「狙い点付近で閉じる」こと自体にも小さく報酬を出し、held までの探索を誘導する。
-    closed_near_obj = RewTerm(
-        func=mdp.gripper_close_near_object,
-        params={
-            "std": 0.03,
-            "axial_std": 0.04,
-            "miss_scale": 0.2,
-            "grasp_offset_z": 0.06,
-            "gripper_cfg": SceneEntityCfg("robot", joint_names=["piper_finger_joint7", "piper_finger_joint8"]),
-        },
-        weight=5.0e1,
-        )   
-
-
-    # Penalty rewards
-    object_tilt = RewTerm(func=mdp.object_tilt, weight=-1.5)  # 初期学習 weight=-1.0
-
-    # -1e4 だと1回の落下(×dt=0.5 で -5000)がエピソード中の接近報酬の総和を大きく上回り、
-    # 「ボトルに近づかない」方策が最適になっていた。終了条件でも打ち切られるので罰は控えめにする。
-    object_dropping = RewTerm(
-            func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")},
-            weight=-1.0e2,
-        )
-
-    # 探索ノイズ由来のペナルティが接近報酬を埋もれさせないよう、初期は小さくする
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 旧 weight=-1e-3
-
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-1e-4, # 旧 weight=-1e-2
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    )   
-
-
-    # Objective rewards
-    # 接近 < 把持 < 持ち上げ ≦ 目標追従 の順に大きくし、「近くで待機」より「掴んで上げる」を得にする
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=2.0e2)  #旧 weight=1.0e2
-
-    goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "lift_height": 0.1, "command_name": "object_pose"},
-        weight=2.0e2,  #旧 weight=1.6e2
-    )
-
-    
-
-
-@configclass
 class TerminationsCfg:
     """Termination terms for the MDP."""
 
@@ -291,7 +229,6 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     # Render settings
     # Using bottle.usd which is contained transprancy
 
-
     sim: sim_utils.SimulationCfg = sim_utils.SimulationCfg(
             render=sim_utils.RenderCfg(
                 carb_settings={
@@ -309,7 +246,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     actions: ActionsCfg = ActionsCfg()
     commands: CommandsCfg = CommandsCfg()
     # MDP settings
-    rewards: RewardsCfg = RewardsCfg()
+    rewards: RewardsCfg = RewardsCfg() # will be set by agent env cfg
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
     curriculum: CurriculumCfg = CurriculumCfg()
@@ -317,12 +254,12 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         """Post initialization."""
         # general settings
-        self.episode_length_s = 10 # 1エピソード60step(2Hz)
+        self.episode_length_s = 10 # 1エピソード20step(2Hz)
         self.viewer.eye = (2.5, 2.5, 1.5)
         # simulation settings
         self.drawing_freq = 60
         self.control_freq = 2 # 2Hzで制御信号を送信
-        self.sim_freq = 200.0
+        self.sim_freq = 100.0
         self.sim.dt = 1.0 / self.sim_freq
         self.decimation = int(self.sim_freq / self.control_freq) 
         self.sim.render_interval = int(self.sim_freq / self.drawing_freq)

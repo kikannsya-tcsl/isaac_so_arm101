@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import torch
 from isaaclab.assets import RigidObject
-from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.sensors import FrameTransformer, TiledCamera
 import isaaclab.utils.math as math_utils
 from isaaclab.utils.math import combine_frame_transforms, matrix_from_quat
@@ -335,8 +335,12 @@ def object_in_contact_course(
         height_margin: 面Aがボトルを切る位置の、底面・上端それぞれからの最小距離 [m]。
             ボトル軸に沿って測る（世界の鉛直ではない）。縁での把持、指と机の干渉、
             端で断面が欠けて半幅の式が成り立たなくなる領域を除外する。
-        max_tilt: グリッパの z_g とボトル軸のなす角の許容値 [rad]。これを超えると
-            面Aがボトル軸とほぼ平行になり交点が定まらないので、硬判定で 0 にする。
+        max_tilt: 許容角 [rad]。次の2つの硬判定に使う。
+            (1) グリッパの z_g と世界の鉛直軸のなす角。接近方向が水平から
+                ±max_tilt 以内のときだけ報酬を出す（真上からの接近を除外）。
+            (2) z_g とボトル軸のなす角。これを超えると面Aがボトル軸とほぼ平行に
+                なり交点・断面が定まらないので 0 にする。(1) と合わせて、
+                倒れたボトルにも報酬は出ない。
         k: 各ゲート（sigmoid）の遷移幅 [m]。境界ちょうどでゲート値 0.5、
             およそ ±k で 0～1 に遷移する。0 ならステップ関数（硬判定）。
         object_cfg: ボトルの RigidObject。
@@ -367,7 +371,10 @@ def object_in_contact_course(
 
     # 面A(z_g=0)との交点
     cos_min = math.cos(max_tilt)
-    aligned = (a[:, 2].abs() > cos_min).float()
+    # z_g が世界の鉛直に近いこと（= 接近方向がほぼ水平）
+    aligned = (z_g[:, 2].abs() > cos_min).float()
+    # ボトル軸が面Aを横切り、断面が定まること
+    section_valid = (a[:, 2].abs() > cos_min).float()
     a_z = torch.where(a[:, 2] >= 0, 1.0, -1.0) * a[:, 2].abs().clamp(min=cos_min)
     s = -b[:, 2] / a_z
     p = b + s.unsqueeze(-1) * a
@@ -390,7 +397,8 @@ def object_in_contact_course(
     front = gate(d) * (p[:, 0] < max_x).float()
     shaping = 1.0 - torch.tanh(d.clamp(min=0.0) / std_x)
 
-    return aligned * hit_a * between * front * shaping
+    # 各因子は 0～1。スケールは RewTerm の weight 側で調整する
+    return aligned * section_valid * hit_a * between * front * shaping
 
 
 def object_goal_distance(
@@ -564,7 +572,7 @@ def gripper_close_near_object(
 
     grasp_quality = held + miss_scale * (1.0 - held)
 
-    return closing * proximity * grasp_quality
+    return closing * proximity * grasp_quality *1.0e2
 
 
 def gripper_closed_far_from_object(
@@ -644,3 +652,77 @@ def gripper_closed_far_from_object(
     ).to(dtype=distance.dtype)
 
     return closing * far * on_ground
+
+
+class object_displacement(ManagerTermBase):
+    """reset 時のボトル位置からの水平変位 [m] を返す。負の重みで使うこと。
+
+    2Hz 制御では報酬は 0.5 秒に1回しか評価されず、ボトルの速度はその瞬間に
+    ほぼ 0 に戻っていることが多い。変位は状態量なので、押しずらした結果を
+    評価タイミングに関係なく捉えられる。
+
+    基準位置は reset() で記録する。RewardManager.reset は reset イベント
+    (reset_root_state_uniform) の後に呼ばれ、write_root_pose_to_sim は
+    data バッファも即時更新するので、ランダム化後の位置が取れる。
+    """
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._object_cfg: SceneEntityCfg = cfg.params.get("object_cfg", SceneEntityCfg("object"))
+        obj: RigidObject = env.scene[self._object_cfg.name]
+        self._init_pos_xy = obj.data.root_link_pos_w[:, :2].clone()
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        obj: RigidObject = self._env.scene[self._object_cfg.name]
+        self._init_pos_xy[env_ids] = obj.data.root_link_pos_w[env_ids, :2]
+
+    def displacement(self) -> torch.Tensor:
+        obj: RigidObject = self._env.scene[self._object_cfg.name]
+        return torch.linalg.vector_norm(
+            obj.data.root_link_pos_w[:, :2] - self._init_pos_xy,
+            dim=1,
+        )
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        return self.displacement()
+
+
+class approach_settled(object_displacement):
+    """ボトルを乱さずに把持前の位置に収まっている状態への報酬。0～1。
+
+    object_in_contact_course の値に「ボトルが直立している」「reset 位置から
+    ほとんど動いていない」の2つの硬判定を掛ける。押し倒しながら・押しずらしながら
+    接触コースに入っても報酬は出ない。
+
+    Args:
+        max_displacement: 許容する水平変位 [m]。
+        max_tilt: 許容する傾き。object_tilt と同じ単位（真横 = 1）。0.1 ≈ 9°。
+        その他: object_in_contact_course と同じ。approach 側の項と揃えること。
+    """
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        max_displacement: float = 0.01,
+        max_tilt: float = 0.1,
+        std_x: float = 0.10,
+        max_x: float = 0.07,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+        robot_cfg: SceneEntityCfg = SceneEntityCfg(
+            "robot", body_names=["link6"],
+            joint_names=["piper_finger_joint7", "piper_finger_joint8"],
+        ),
+    ) -> torch.Tensor:
+        course = object_in_contact_course(
+            env, std_x=std_x, max_x=max_x,
+            object_cfg=object_cfg, robot_cfg=robot_cfg,
+        )
+        undisturbed = (self.displacement() < max_displacement).to(course.dtype)
+        upright = (object_tilt(env, object_cfg) < max_tilt).to(course.dtype)
+        return course * undisturbed * upright

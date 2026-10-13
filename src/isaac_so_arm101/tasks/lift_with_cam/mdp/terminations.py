@@ -16,12 +16,13 @@ the termination introduced by the function.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
 from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import combine_frame_transforms
+from isaaclab.utils.math import combine_frame_transforms, matrix_from_quat
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -56,3 +57,18 @@ def object_reached_goal(
 
     # rewarded if the object is lifted above the threshold
     return distance < threshold
+
+
+def object_tipped_over(
+    env: ManagerBasedRLEnv,
+    max_angle: float = 0.5,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """ボトルのローカルZ軸と鉛直のなす角が max_angle [rad] を超えたら終了する。
+
+    0.5 rad ≈ 29°。円柱のボトルはこの程度傾くと自力では戻らないので、
+    転倒とみなして episode を打ち切る。
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    up_z = matrix_from_quat(obj.data.root_link_quat_w)[:, 2, 2]
+    return up_z < math.cos(max_angle)

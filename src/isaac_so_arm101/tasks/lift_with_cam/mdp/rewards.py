@@ -397,8 +397,10 @@ def object_in_contact_course(
     front = gate(d) * (p[:, 0] < max_x).float()
     shaping = 1.0 - torch.tanh(d.clamp(min=0.0) / std_x)
 
+    mul = aligned * section_valid * hit_a * between * front * shaping
+
     # 各因子は 0～1。スケールは RewTerm の weight 側で調整する
-    return aligned * section_valid * hit_a * between * front * shaping
+    return torch.clip(mul, min=0.0, max=0.00001) * 1.0e5
 
 
 def object_goal_distance(

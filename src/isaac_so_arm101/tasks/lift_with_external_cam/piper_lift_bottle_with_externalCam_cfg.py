@@ -42,11 +42,28 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
             data_types=["rgb", "distance_to_image_plane"],
             spawn=sim_utils.PinholeCameraCfg(
                 focal_length=1.93, 
-                horizontal_aperture=2.14,
-                vertical_aperture=2.14,  # FOV 58°x58° (D405実機の垂直FOVに合わせ、正方形画像の中央クロップと一致させる)
+                horizontal_aperture=2.14 * 640 / 360,
+                vertical_aperture=2.14,  
                 clipping_range=(0.05, 1.5)),
-            width=224, height=224,
+            width=360, height=640,
             depth_clipping_behavior="max",
+        )
+
+        # Set the external camera
+        self.scene.external_cam = TiledCameraCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/arm_base/external_cam",
+            offset=TiledCameraCfg.OffsetCfg(
+                pos=(0., 0., 0.),
+                rot=(0, 0, 0, 0),
+                convention="world"
+            ),
+            data_types=["rgb"],
+            spawn=sim_utils.PinholeCameraCfg(
+                focal_length=1.93, 
+                horizontal_aperture=2.14 * 640 / 360,
+                vertical_aperture=2.14,  
+                clipping_range=(0.05, 1.5)),
+            width=360, height=640,
         )
 
         # override actions

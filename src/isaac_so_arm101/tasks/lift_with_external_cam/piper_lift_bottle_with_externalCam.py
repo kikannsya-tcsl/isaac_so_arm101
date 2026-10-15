@@ -188,8 +188,8 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
     
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.15}, weight=1.0)  #初期学習 weight=1.0
-    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.04}, weight=15.)  #初期学習 weight=1.0
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.5}, weight=1.0)  #初期学習 weight=1.0
+    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.1}, weight=5.0)  #初期学習 weight=1.0
 
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=1.0e2)
 
@@ -278,7 +278,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         # simulation settings
         self.drawing_freq = 60
         self.control_freq = 2 # 2Hzで制御信号を送信
-        self.sim_freq = 200.0
+        self.sim_freq = 100.0
         self.sim.dt = 1.0 / self.sim_freq
         self.decimation = int(self.sim_freq / self.control_freq) 
         self.sim.render_interval = int(self.sim_freq / self.drawing_freq)

@@ -188,40 +188,47 @@ class EventCfg:
                 "recompute_inertia": True},
     )
 
+_APPROACH_PARAMS = {
+    "std_x": 0.05,
+    "max_x": 0.12,
+    "robot_cfg": SceneEntityCfg("robot", body_names=["link6"], joint_names=["piper_finger_joint7", "piper_finger_joint8"]),
+}
+
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    # Positive rewards for approching.
-    # 初期姿勢の手先は狙い点から ~0.25 m 離れている。std=0.16 ではそこで勾配がほぼ無く
-    # 「動かない」方策に収束したため、coarse を std=0.3 にして主たる誘導項にする。
-    # fine は最終の詰め専用（遠方では飽和するので重みを lift より小さく抑える）。
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.5}, weight=1.0)  #初期学習 weight=1.0
-    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.1}, weight=20.)  #初期学習 weight=1.0
+    # --- 誘導（正） ---
+    # 遠方からの粗い誘導。std が大きいので、ボトルを押しのける方向の勾配は弱い
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.3}, weight=1.0)
+    # 向き・高さ・指の間を満たしたときだけ出る。P1 の本体
+    approach_pose = RewTerm(func=mdp.object_in_contact_course, params=_APPROACH_PARAMS, weight=5.0)
 
-    # Penalty rewards
-    # object_tilt = RewTerm(func=mdp.object_tilt, weight=-1.0)  # 初期学習 weight=-1.0
+    # --- ボトルを守る（負） ---
+    object_tilt = RewTerm(func=mdp.object_tilt, weight=-5.0)
 
-    # 探索ノイズ由来のペナルティが接近報酬を埋もれさせないよう、初期は小さくする
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 旧 weight=-1e-3
-
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-1e-4, # 旧 weight=-1e-2
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    )   
-
-
-    # Objective rewards
-    # 接近 < 把持 < 持ち上げ ≦ 目標追従 の順に大きくし、「近くで待機」より「掴んで上げる」を得にする
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=3.0e2)  #旧 weight=1.0e2
-
-    goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "lift_height": 0.1, "command_name": "object_pose"},
-        weight=3.0e2,  #旧 weight=1.6e2
+    # 転倒・落下で終了したステップに一度だけ課す
+    terminated = RewTerm(
+        func=mdp.is_terminated_term,
+        params={"term_keys": ["object_dropping"]},
+        weight=-20.0,
     )
 
+    # P1 ではグリッパは常に開いたまま（far_distance=0, std=0 で常時判定）
+    gripper_closing = RewTerm(
+        func=mdp.gripper_closed_far_from_object,
+        params={"far_distance": 0.0, "std": 0.0, "lift_height": 0.05, "grasp_offset_z": 0.06},
+        weight=-0.5,
+    )
+
+    # 名前は CurriculumCfg から参照されるので変えないこと
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-1e-4,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    
 @configclass
 class TerminationsCfg:
     """Termination terms for the MDP."""
@@ -240,11 +247,11 @@ class CurriculumCfg:
     # num_steps は env ステップ数（20 step/iter）。旧値 10000 = iter 500 で、接近を覚える前に
     # -0.1 が効いて報酬が崩壊したため、把持・持ち上げ習得後（~iter 3000）に -1e-2 へ上げる。
     action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-2, "num_steps": 60000}
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-3, "num_steps": 60000}
     )
 
     joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-2, "num_steps": 60000}
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-3, "num_steps": 60000}
     )
 
 
@@ -294,7 +301,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         # simulation settings
         self.drawing_freq = 60
         self.control_freq = 2 # 2Hzで制御信号を送信
-        self.sim_freq = 200.0
+        self.sim_freq = 100.0
         self.sim.dt = 1.0 / self.sim_freq
         self.decimation = int(self.sim_freq / self.control_freq) 
         self.sim.render_interval = int(self.sim_freq / self.drawing_freq)

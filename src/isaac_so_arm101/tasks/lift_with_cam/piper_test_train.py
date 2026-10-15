@@ -198,35 +198,33 @@ _APPROACH_PARAMS = {
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    # --- 誘導（正） ---
-    # 遠方からの粗い誘導。std が大きいので、ボトルを押しのける方向の勾配は弱い
-    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.3}, weight=1.0)
-    # 向き・高さ・指の間を満たしたときだけ出る。P1 の本体
-    approach_pose = RewTerm(func=mdp.object_in_contact_course, params=_APPROACH_PARAMS, weight=5.0)
+    # Positive rewards for approching.
+    # 初期姿勢の手先は狙い点から ~0.25 m 離れている。std=0.16 ではそこで勾配がほぼ無く
+    # 「動かない」方策に収束したため、coarse を std=0.3 にして主たる誘導項にする。
+    # fine は最終の詰め専用（遠方では飽和するので重みを lift より小さく抑える）。
+    reaching_coarse = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.5}, weight=1.0)  #初期学習 weight=1.0
+    reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.1}, weight=20.)  #初期学習 weight=1.0
 
-    # --- ボトルを守る（負） ---
-    object_tilt = RewTerm(func=mdp.object_tilt, weight=-5.0)
+    # Penalty rewards
+    object_tilt = RewTerm(func=mdp.object_tilt, weight=-1.0)  # 初期学習 weight=-1.0
 
-    # 転倒・落下で終了したステップに一度だけ課す
-    terminated = RewTerm(
-        func=mdp.is_terminated_term,
-        params={"term_keys": ["object_dropping"]},
-        weight=-20.0,
-    )
+    # 探索ノイズ由来のペナルティが接近報酬を埋もれさせないよう、初期は小さくする
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 旧 weight=-1e-3
 
-    # P1 ではグリッパは常に開いたまま（far_distance=0, std=0 で常時判定）
-    gripper_closing = RewTerm(
-        func=mdp.gripper_closed_far_from_object,
-        params={"far_distance": 0.0, "std": 0.0, "lift_height": 0.05, "grasp_offset_z": 0.06},
-        weight=-0.5,
-    )
-
-    # 名前は CurriculumCfg から参照されるので変えないこと
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
+    )   
+
+
+    # Objective rewards
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=3.0e2)  #旧 weight=1.0e2
+
+    goal_tracking = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.3, "lift_height": 0.1, "command_name": "object_pose"},
+        weight=3.0e2,  #旧 weight=1.6e2
     )
     
 @configclass
@@ -320,6 +318,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
 
         # Set so arm as robot
         self.scene.robot = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot.spawn.activate_contact_sensors = True
     
         # Set the wrist camera
         self.scene.wrist_cam = TiledCameraCfg(
@@ -386,7 +385,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/link6",
+                    prim_path="{ENV_REGEX_NS}/Robot/gripper_base",
                     name="end_effector",
                     offset=OffsetCfg(
                         pos=[0.0, 0.0, 0.125],

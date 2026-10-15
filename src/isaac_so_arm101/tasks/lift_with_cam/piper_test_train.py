@@ -200,7 +200,7 @@ class RewardsCfg:
     reaching_fine = RewTerm(func=mdp.object_ee_distance, params={"grasp_offset_z": 0.06, "std": 0.1}, weight=20.)  #初期学習 weight=1.0
 
     # Penalty rewards
-    # object_tilt = RewTerm(func=mdp.object_tilt, weight=-1.0)  # 初期学習 weight=-1.0
+    object_tilt = RewTerm(func=mdp.object_tilt, weight=-1.0)  # 初期学習 weight=-1.0
 
     # 探索ノイズ由来のペナルティが接近報酬を埋もれさせないよう、初期は小さくする
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4) # 旧 weight=-1e-3
@@ -213,7 +213,6 @@ class RewardsCfg:
 
 
     # Objective rewards
-    # 接近 < 把持 < 持ち上げ ≦ 目標追従 の順に大きくし、「近くで待機」より「掴んで上げる」を得にする
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=3.0e2)  #旧 weight=1.0e2
 
     goal_tracking = RewTerm(
@@ -294,7 +293,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         # simulation settings
         self.drawing_freq = 60
         self.control_freq = 2 # 2Hzで制御信号を送信
-        self.sim_freq = 200.0
+        self.sim_freq = 100.0
         self.sim.dt = 1.0 / self.sim_freq
         self.decimation = int(self.sim_freq / self.control_freq) 
         self.sim.render_interval = int(self.sim_freq / self.drawing_freq)
@@ -313,6 +312,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
 
         # Set so arm as robot
         self.scene.robot = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot.spawn.activate_contact_sensors = True
     
         # Set the wrist camera
         self.scene.wrist_cam = TiledCameraCfg(
@@ -379,7 +379,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/link6",
+                    prim_path="{ENV_REGEX_NS}/Robot/gripper_base",
                     name="end_effector",
                     offset=OffsetCfg(
                         pos=[0.0, 0.0, 0.125],

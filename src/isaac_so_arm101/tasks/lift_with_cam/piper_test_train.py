@@ -35,7 +35,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import TiledCameraCfg
+from isaaclab.sensors import ContactSensorCfg, TiledCameraCfg
 # from isaaclab.managers NotImplementedError
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import (
     FrameTransformerCfg,
@@ -66,6 +66,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     wrist_cam: TiledCameraCfg = MISSING
     # end-effector sensor: will be populated by agent env cfg
     ee_frame: FrameTransformerCfg = MISSING
+    # 手先(フィンガー)の接触センサ: 報酬計算用、agent env cfg で設定
+    finger_contact: ContactSensorCfg = MISSING
     # target object: will be populated by agent env cfg
     object: RigidObjectCfg | DeformableObjectCfg = MISSING
 
@@ -156,6 +158,9 @@ class ObservationsCfg:
         ee_pose_in_root = ObsTerm(func=mdp.ee_pose_in_robot_root_frame)
         object_pose_in_root = ObsTerm(func=mdp.object_pose_in_robot_root_frame)
         object_ee_relative_pos = ObsTerm(func=mdp.object_ee_relative_position)
+        # 指-ボトル間の接触（実機に指先力センサが無いため Critic のみ）
+        finger_contact_forces = ObsTerm(func=mdp.finger_object_contact_forces, params={"window": 5, "scale": 1.0})
+        finger_contact_flags = ObsTerm(func=mdp.finger_object_contact_flags, params={"threshold": 0.5, "window": 5})
 
         def __post_init__(self):
             self.enable_corruption = False
@@ -218,8 +223,19 @@ class RewardsCfg:
     )   
 
 
+    # 指がテーブル等ボトル以外に当たったらペナルティ
+    finger_non_object_contact = RewTerm(func=mdp.finger_non_object_contact, params={"threshold": 1.0}, weight=-5.0)
+
     # Objective rewards
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"lift_height":  0.1}, weight=3.0e2)  #旧 weight=1.0e2
+    # 両指でボトルを挟んでいる（接触センサで判定）
+    bilateral_grasp = RewTerm(func=mdp.bilateral_grasp, params={"threshold": 0.5, "window": 5}, weight=30.0)
+
+    # 押し上げ等で高さだけ稼ぐのを防ぐため、持ち上げ報酬は把持中のみ与える
+    lifting_object = RewTerm(
+        func=mdp.lifted_while_grasped,
+        params={"lift_height": 0.1, "threshold": 0.5, "window": 5},
+        weight=3.0e2,
+    )
 
     goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
@@ -373,6 +389,19 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
                     disable_gravity=False,
                 ),
             ),
+        )
+
+        # 手先(左右フィンガー)の接触センサ（報酬計算用）
+        # filter_prim_paths_expr で対象物体との接触力のみを force_matrix_w (N, 2, 1, 3) に分離して取得する。
+        # net_forces_w はテーブル・自己衝突を含む全接触力。
+        # body の順序は USD の走査順なので、報酬側では body_names で解決すること。
+        self.scene.finger_contact = ContactSensorCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/gripper_link[12]",
+            update_period=0.0,  # 毎物理ステップ更新
+            history_length=self.decimation,  # 1制御ステップ分の履歴（瞬間的な接触の取りこぼし防止）
+            track_air_time=False,
+            filter_prim_paths_expr=["{ENV_REGEX_NS}/Object"],
+            debug_vis=False,
         )
 
         # Listens to the required transforms

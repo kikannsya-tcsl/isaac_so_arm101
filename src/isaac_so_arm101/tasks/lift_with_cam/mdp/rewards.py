@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import torch
 from isaaclab.assets import RigidObject
 from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
-from isaaclab.sensors import FrameTransformer, TiledCamera
+from isaaclab.sensors import ContactSensor, FrameTransformer, TiledCamera
 import isaaclab.utils.math as math_utils
 from isaaclab.utils.math import combine_frame_transforms, matrix_from_quat
 
@@ -79,6 +79,59 @@ def _bottom_clearance(
         - env.scene.env_origins[:, 2]
         - surface_height
     )
+
+
+# 指の接触センサ（finger_contact）の既定参照。
+# body の並びは USD 走査順なので、body_names + preserve_order で 左(link1), 右(link2) に固定する。
+FINGER_CONTACT_CFG = SceneEntityCfg(
+    "finger_contact", body_names=["gripper_link1", "gripper_link2"], preserve_order=True
+)
+
+
+def _finger_object_force_history(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    window: int | None,
+) -> torch.Tensor:
+    """各指がボトルから受けた接触力の履歴 (N, T, B, 3) [N, world] を返す。
+
+    force_matrix_w_history (N, T, B, M, 3) をフィルタ対象 M について合計する。
+    制御 1 ステップ = 物理 decimation ステップなので、履歴を見ないと
+    制御ステップ境界の 1 サブステップしか評価できない。
+
+    Args:
+        window: 直近何サブステップを使うか（index 0 が最新）。None なら全履歴。
+    """
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    forces = sensor.data.force_matrix_w_history[:, :, sensor_cfg.body_ids].sum(dim=-2)
+    if window is not None:
+        forces = forces[:, :window]
+    return forces
+
+
+def finger_object_force(
+    env: ManagerBasedRLEnv,
+    window: int | None = 5,
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """window 内で大きさが最大となった時点の、各指のボトル接触力 (N, B, 3) [N, world]。"""
+    forces = _finger_object_force_history(env, sensor_cfg, window)
+    idx = torch.linalg.vector_norm(forces, dim=-1).argmax(dim=1)  # (N, B)
+    return torch.gather(
+        forces, 1, idx[:, None, :, None].expand(-1, 1, -1, 3)
+    ).squeeze(1)
+
+
+def finger_object_contact(
+    env: ManagerBasedRLEnv,
+    threshold: float = 0.5,
+    window: int | None = 5,
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """window 内に各指がボトルと threshold [N] 以上で接触したかの 0/1 (N, B)。"""
+    forces = _finger_object_force_history(env, sensor_cfg, window)
+    peak = torch.linalg.vector_norm(forces, dim=-1).amax(dim=1)
+    return (peak > threshold).float()
 
 
 # ---------------------------------------------------------------------------
@@ -728,3 +781,65 @@ class approach_settled(object_displacement):
         undisturbed = (self.displacement() < max_displacement).to(course.dtype)
         upright = (object_tilt(env, object_cfg) < max_tilt).to(course.dtype)
         return course * undisturbed * upright
+
+
+def bilateral_grasp(
+    env: ManagerBasedRLEnv,
+    threshold: float = 0.5,
+    window: int | None = 5,
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """両指が同時にボトルと接触している（= 挟んでいる）なら 1 を返す。
+
+    サブステップごとに左右の接触力の min を取り、window 内の最大値で判定する。
+    左右が別々の瞬間に触れただけ（ボトルを指の間で弾いた等）は把持とみなさない。
+    gripper_close_near_object の held（指関節位置からの推定）と違い、
+    指の外側でボトルを押して止まっている状態も弾ける。
+
+    Args:
+        threshold: 各指の接触力の下限 [N]。ボトル質量 0.03～0.55 kg（重量 0.3～5.4 N）
+            を目安に、自重を摩擦で支えるのに必要な把持力より小さくする。
+        window: 判定に使う直近のサブステップ数。None なら制御 1 ステップ全体。
+            把持は持続する状態なので、短めにして瞬間的な接触を拾わないようにする。
+    """
+    forces = _finger_object_force_history(env, sensor_cfg, window)
+    both = torch.linalg.vector_norm(forces, dim=-1).amin(dim=-1)  # (N, T)
+    return (both.amax(dim=1) > threshold).float()
+
+
+def lifted_while_grasped(
+    env: ManagerBasedRLEnv,
+    lift_height: float,
+    threshold: float = 0.5,
+    window: int | None = 5,
+    surface_height: float = 0.0,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """両指で挟んだ状態でボトルが lift_height 以上持ち上がっていれば 1 を返す。
+
+    object_is_lifted × bilateral_grasp。押し上げ・すくい上げ・指の外側への
+    引っ掛けで高さだけ稼ぐ抜け道を塞ぐ。
+    """
+    lifted = object_is_lifted(env, lift_height, surface_height, object_cfg)
+    return lifted * bilateral_grasp(env, threshold, window, sensor_cfg)
+
+
+def finger_non_object_contact(
+    env: ManagerBasedRLEnv,
+    threshold: float = 1.0,
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """指がボトル以外（テーブル・自己衝突など）と threshold [N] 以上で接触したら 1 を返す。
+
+    net_forces_w（全接触相手の合計）からボトル分の force_matrix_w を差し引いた残りで判定する。
+    衝突による瞬間的な力も拾うよう、制御 1 ステップ分の全履歴の最大値を使う。
+    負の重みで使うこと。
+
+    注意: 空のまま閉じ切ったとき左右の指同士が接触する場合は、これも検出される。
+    """
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    net = sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids]
+    obj = _finger_object_force_history(env, sensor_cfg, None)
+    other = torch.linalg.vector_norm(net - obj, dim=-1)  # (N, T, B)
+    return (other.amax(dim=(1, 2)) > threshold).float()

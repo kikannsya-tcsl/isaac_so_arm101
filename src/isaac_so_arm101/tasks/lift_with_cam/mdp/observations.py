@@ -19,6 +19,8 @@ import isaaclab.utils.math as math_utils
 from isaaclab.utils.math import subtract_frame_transforms
 from isaaclab.sensors import TiledCamera, FrameTransformer
 
+from .rewards import FINGER_CONTACT_CFG, finger_object_contact, finger_object_force
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -124,6 +126,42 @@ def object_ee_relative_position(
     )
 
     return obj_pos_b - ee_pos_b
+
+def finger_object_contact_forces(
+    env,
+    window: int | None = 5,
+    scale: float = 1.0,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """各指がボトルから受けた接触力をロボット根元座標で返す（Critic 用の特権情報）。
+
+    window 内で大きさが最大となった時点の力を、成分ごとに sign(f) * log1p(|f| / scale)
+    で圧縮する（衝突時のスパイクで観測正規化の統計が崩れないようにするため）。
+
+    Returns:
+        (num_envs, 3 * B): [左 fx, fy, fz, 右 fx, fy, fz]
+    """
+    robot: Articulation = env.scene[robot_cfg.name]
+    forces_w = finger_object_force(env, window, sensor_cfg)  # (N, B, 3)
+    quat = robot.data.root_quat_w.unsqueeze(1).expand(-1, forces_w.shape[1], -1)
+    forces_b = math_utils.quat_apply_inverse(quat, forces_w)
+    forces_b = torch.sign(forces_b) * torch.log1p(forces_b.abs() / scale)
+    return forces_b.reshape(forces_b.shape[0], -1)
+
+
+def finger_object_contact_flags(
+    env,
+    threshold: float = 0.5,
+    window: int | None = 5,
+    sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
+) -> torch.Tensor:
+    """各指がボトルと接触しているかの 0/1（Critic 用）。
+
+    Returns:
+        (num_envs, B): [左, 右]
+    """
+    return finger_object_contact(env, threshold, window, sensor_cfg)
 
 # (N,H,W,C) にブロードキャストする形で保持
 _IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 1, 1, 3)

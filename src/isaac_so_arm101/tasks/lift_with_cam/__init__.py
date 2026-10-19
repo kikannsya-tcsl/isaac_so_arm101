@@ -37,11 +37,21 @@ gym.register(
 )
 
 gym.register(
-    id="Test-piper-Lift",
+    id="Test-Piper-Lift",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     kwargs={
         "env_cfg_entry_point": f"{__name__}.piper_test_train:PiperLiftCubeEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:LiftBottleCameraPPORunnerCfg", 
+    },
+    disable_env_checker=True,
+)
+
+gym.register(
+    id="Test-Piper-Cube-Lift",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.piper_test_cube_train:PiperLiftCubeEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:LiftCubeCameraPPORunnerCfg", 
     },
     disable_env_checker=True,
 )

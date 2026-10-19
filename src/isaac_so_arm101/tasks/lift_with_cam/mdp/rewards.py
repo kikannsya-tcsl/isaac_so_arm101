@@ -743,9 +743,21 @@ class object_displacement(ManagerTermBase):
     def __call__(
         self,
         env: ManagerBasedRLEnv,
+        lift_height: float | None = None,
+        surface_height: float = 0.0,
         object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     ) -> torch.Tensor:
-        return self.displacement()
+        """
+        Args:
+            lift_height: 指定すると底面の高さが lift_height 未満（接地中）のときだけ
+                変位を返す。持ち上げて目標位置へ運ぶ動きを罰さないため。
+                持ち上げ報酬と同じ値にすること。None なら常に変位を返す。
+        """
+        displacement = self.displacement()
+        if lift_height is None:
+            return displacement
+        on_ground = _bottom_clearance(env, object_cfg, surface_height) < lift_height
+        return displacement * on_ground.to(displacement.dtype)
 
 
 class approach_settled(object_displacement):
@@ -812,6 +824,7 @@ def lifted_while_grasped(
     lift_height: float,
     threshold: float = 0.5,
     window: int | None = 5,
+    eval_grasp: bool = True,
     surface_height: float = 0.0,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     sensor_cfg: SceneEntityCfg = FINGER_CONTACT_CFG,
@@ -822,8 +835,10 @@ def lifted_while_grasped(
     引っ掛けで高さだけ稼ぐ抜け道を塞ぐ。
     """
     lifted = object_is_lifted(env, lift_height, surface_height, object_cfg)
-    return lifted * bilateral_grasp(env, threshold, window, sensor_cfg)
-
+    if eval_grasp:
+        return lifted * bilateral_grasp(env, threshold, window, sensor_cfg)
+    else:
+        return lifted
 
 def finger_non_object_contact(
     env: ManagerBasedRLEnv,

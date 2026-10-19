@@ -11,7 +11,7 @@ num=${1:-2000}
 
 uv run train --task Piper-Lift-Bottle-With-Camera-phase1 \
 --headless \
---num_envs 32 \
+--num_envs 128 \
 --max_iterations $num \
 --enable_camera \
 

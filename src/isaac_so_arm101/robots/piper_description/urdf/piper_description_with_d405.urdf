@@ -296,6 +296,12 @@
     </collision>
   </link>
   <joint name="piper_finger_joint8" type="prismatic">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../piper_meshes/camera_mount.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
     <origin rpy="1.5707963 0 -3.1415926" xyz="0 0 0.138"/>
     <parent link="gripper_base"/>
     <child link="gripper_link2"/>
@@ -306,21 +312,7 @@
   <joint name="camera_joint" type="fixed">
     <origin rpy="0 -1.5707963267948966 0" xyz="-0.0425 0 0.055"/>
     <parent link="gripper_base"/>
-    <child link="camera_bottom_screw_frame"/>
-  </joint>
-  <link name="camera_bottom_screw_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <joint name="camera_link_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
-    <parent link="camera_bottom_screw_frame"/>
     <child link="camera_link"/>
-  </joint>
   <link name="camera_link">
     <visual>
       <!-- the mesh origin is at front plate in between the two infrared camera axes -->
@@ -365,87 +357,6 @@
     <child link="camera_depth_optical_frame"/>
   </joint>
   <link name="camera_depth_optical_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <!-- camera left IR joints and links -->
-  <joint name="camera_infra1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="camera_link"/>
-    <child link="camera_infra1_frame"/>
-  </joint>
-  <link name="camera_infra1_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <joint name="camera_infra1_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="camera_infra1_frame"/>
-    <child link="camera_infra1_optical_frame"/>
-  </joint>
-  <link name="camera_infra1_optical_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <!-- camera right IR joints and links -->
-  <joint name="camera_infra2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
-    <parent link="camera_link"/>
-    <child link="camera_infra2_frame"/>
-  </joint>
-  <link name="camera_infra2_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <joint name="camera_infra2_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="camera_infra2_frame"/>
-    <child link="camera_infra2_optical_frame"/>
-  </joint>
-  <link name="camera_infra2_optical_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <!-- camera color joints and links -->
-  <joint name="camera_color_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="camera_link"/>
-    <child link="camera_color_frame"/>
-  </joint>
-  <link name="camera_color_frame">
-    <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-  <joint name="camera_color_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="camera_color_frame"/>
-    <child link="camera_color_optical_frame"/>
-  </joint>
-  <link name="camera_color_optical_frame">
     <!-- 座標フレーム用のダミー質量 (merge_fixed_joints=False で剛体化されるため、質量未定義を避ける) -->
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0"/>

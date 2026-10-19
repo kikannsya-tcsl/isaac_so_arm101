@@ -45,6 +45,8 @@ PIPER_CFG = ArticulationCfg(
         # Set initial joint velocities to zero
         joint_vel={".*": 0.0},
     ),
+
+    # Actuator parameters 
     actuators={
             "arm": ImplicitActuatorCfg(
                 joint_names_expr=["joint.*"],
@@ -59,10 +61,9 @@ PIPER_CFG = ArticulationCfg(
                     "joint3": 0.1,
                     "joint4": 0.02,
                     "joint5": 0.02,
-                    "joint6": 0.02,
+                    "joint6": 0.001,
                 },
                 
-                # 刚度 (Stiffness)：针对轻型臂 Piper 优化，不再追求极致硬度
                 stiffness={
                     "joint1": 600.0, 
                     "joint2": 600.0,
@@ -72,7 +73,6 @@ PIPER_CFG = ArticulationCfg(
                     "joint6": 150.0,
                 },
                 
-                # 阻尼 (Damping)：采用临界阻尼思路，比例设在 10% 左右
                 damping={
                     "joint1": 40.0,
                     "joint2": 40.0,

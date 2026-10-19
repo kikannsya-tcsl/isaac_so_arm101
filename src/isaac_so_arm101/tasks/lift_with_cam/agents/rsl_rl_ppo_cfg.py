@@ -18,7 +18,6 @@ from isaaclab_rl.rsl_rl import (
 @configclass
 class LiftBottleCameraPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     """RGB-D凍結特徴（512次元）を actor 入力に持つ非対称アクター・クリティック版。"""
-    # 1 iter = 64env x 10step = 64 エピソード分と短いので、50 iter ごとに保存（2000 iter で 40 個）
     save_interval = 50
     experiment_name = "lift_bottle_with_camera"
     empirical_normalization = False
@@ -33,10 +32,8 @@ class LiftBottleCameraPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         noise_std_type="log",
-        # actor は 512+α 次元を受けるので入口を広げる
-        actor_hidden_dims=[1024, 512, 128],
-        # critic は状態のみ（20次元程度）なので据え置きで十分
-        critic_hidden_dims=[256, 128, 64],
+        actor_hidden_dims=[1024, 512, 128, 64],
+        critic_hidden_dims=[1024, 512, 128, 64],
         activation="elu",
         # 凍結特徴はスケール無調整。ここを True にしないと PPO が壊れる
         actor_obs_normalization=True,
@@ -45,7 +42,9 @@ class LiftBottleCameraPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,
-        use_clipped_value_loss=True,
+        # 値クリップは旧推定から ±clip_param(0.2) しか動けず、価値のスケールが大きいと
+        # critic が追従できず value loss が発散したため無効化
+        use_clipped_value_loss=False,
         clip_param=0.2,
         entropy_coef=0.008,          # 視覚探索は難しくなるので気持ち上げる
         # バッチ = num_envs x 10 = 640 (64env)。2 分割でミニバッチ 320、
@@ -54,8 +53,14 @@ class LiftBottleCameraPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         num_mini_batches=2,
         learning_rate=1.0e-4,   
         schedule="adaptive",
-        gamma=0.,
+        # 2Hz・20 step/episode。gamma=0 だと把持→持ち上げの因果を学べないので
+        # 実効ホライズン 1/(1-gamma)=20 step（≒1 episode）にする
+        gamma=0.95,
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+@configclass
+class LiftCubeCameraPPORunnerCfg(LiftBottleCameraPPORunnerCfg):
+    experiment_name = "lift_cube_with_camera"

@@ -97,7 +97,8 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
         marker_cfg.prim_path = "/Visuals/FrameTransformer"
         self.scene.ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/arm_base",
-            debug_vis=True,
+            # カメラ画像への写り込みを防ぐため学習時は無効 (_PLAY / play --debug_vis で有効化)
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(

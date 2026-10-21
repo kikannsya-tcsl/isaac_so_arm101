@@ -54,7 +54,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
             prim_path="{ENV_REGEX_NS}/Robot/arm_base/external_cam",
             offset=TiledCameraCfg.OffsetCfg(
                 pos=(0., 0., 0.),
-                rot=(0, 0, 0, 0),
+                rot=(1.0, 0.0, 0.0, 0.0),  # 単位クォータニオン (w, x, y, z)。実機の取付姿勢が決まったら更新
                 convention="world"
             ),
             data_types=["rgb"],

@@ -296,36 +296,59 @@
     </collision>
   </link>
   <joint name="piper_finger_joint8" type="prismatic">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="../piper_meshes/camera_mount.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-    </visual>
     <origin rpy="1.5707963 0 -3.1415926" xyz="0 0 0.138"/>
     <parent link="gripper_base"/>
     <child link="gripper_link2"/>
     <axis xyz="0 0 -1"/>
     <limit effort="10" lower="-0.05" upper="0" velocity="3"/>
   </joint>
-  <!-- camera body, with origin at bottom screw mount -->
-  <joint name="camera_joint" type="fixed">
-    <origin rpy="0 -1.5707963267948966 0" xyz="-0.0425 0 0.055"/>
+  <!-- Camera mount-->
+  <joint name="camera_mount_joint" type="fixed">
+    <origin rpy="0 -1.5707963267948966 0" xyz="-0.05312 0 0.03075"/>
     <parent link="gripper_base"/>
+    <child link="camera_mount"/>
+  </joint>
+  <link name="camera_mount">
+    <visual>
+      <!-- the mesh origin is at front plate in between the two infrared camera axes -->
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../piper_meshes/camera_mount.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="plastic"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../piper_meshes/camera_mount.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+    <inertial>
+       <!--Tod Measure Mount Mass and Calculae Inertia Later   -->
+      <mass value="0.01912"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <inertia ixx="6.2428e-06" ixy="0.0" ixz="9.9996e-07" iyy="4.9578e-06" iyz="0.0" izz="3.8237e-06"/>
+    </inertial>
+  </link>
+  <!-- camera body, with origin at camera mount -->
+  <joint name="camera_joint" type="fixed">
+    <origin rpy="0 1.8325957145940461 0" xyz=" 0.0225 0 0.01575"/>
+    <parent link="camera_mount"/>
     <child link="camera_link"/>
+  </joint>
   <link name="camera_link">
     <visual>
       <!-- the mesh origin is at front plate in between the two infrared camera axes -->
-      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
         <mesh filename="../piper_meshes/d405.stl" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="aluminum"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <origin rpy="0 0 1.5707963267948966" xyz="0 0 -0.0115"/>
       <geometry>
-        <box size="0.023 0.042 0.042"/>
+        <box size="0.042 0.042 0.023"/>
       </geometry>
     </collision>
     <inertial>
@@ -333,13 +356,13 @@
            重心は box 中心 (camera_link 原点は左 IR 付近で筐体中心ではない)。
            I = m/12 * (b^2 + c^2)。mass は実機 (カメラ + ブラケット) の実測値に合わせて更新すること -->
       <mass value="0.072"/>
-      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <inertia ixx="2.117e-05" ixy="0.0" ixz="0.0" iyy="1.376e-05" iyz="0.0" izz="1.376e-05"/>
     </inertial>
   </link>
   <!-- camera depth joints and links -->
   <joint name="camera_depth_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0.009 -0.0037"/>
     <parent link="camera_link"/>
     <child link="camera_depth_frame"/>
   </joint>
@@ -352,7 +375,7 @@
     </inertial>
   </link>
   <joint name="camera_depth_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <origin rpy="0 0 -1.5707963267948966" xyz="0 0 0"/>
     <parent link="camera_depth_frame"/>
     <child link="camera_depth_optical_frame"/>
   </joint>

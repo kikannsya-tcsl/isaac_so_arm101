@@ -18,7 +18,8 @@ PIPER_CFG = ArticulationCfg(
         asset_path=f"{TEMPLATE_ASSETS_DATA_DIR}/urdf/piper_description_with_d405.urdf",
         activate_contact_sensors=False, # set as false while waiting for capsule implementation
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,
+            # Without Gravity means robots act with gravity compensation.
+            disable_gravity=True,
             max_depenetration_velocity=5.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(

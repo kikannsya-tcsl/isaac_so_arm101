@@ -21,10 +21,11 @@ from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaac_so_arm101.tasks.lift_with_cam.piper_lift_bottle_approach_slowly_env_cfg import LiftEnvCfg
+from isaac_so_arm101.tasks.lift_with_cam.piper_lift_bottle_with_externalCam import LiftEnvCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 from isaac_so_arm101.robots.piper_description.piper import PIPER_CFG
 from isaac_so_arm101.model import MODEL_DIR
+from isaac_so_arm101.model.external_cam import return_camera_matrix
 
 @configclass
 class PiperLiftCubeEnvCfg(LiftEnvCfg):
@@ -53,15 +54,14 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
         self.scene.external_cam = TiledCameraCfg(
             prim_path="{ENV_REGEX_NS}/Robot/arm_base/external_cam",
             offset=TiledCameraCfg.OffsetCfg(
-                pos=(0., 0., 0.),
-                rot=(1.0, 0.0, 0.0, 0.0),  # 単位クォータニオン (w, x, y, z)。実機の取付姿勢が決まったら更新
+                pos=(0., 0.4, 0.176), # (0.4, 0, 0.185 - 0.009鋼板厚み)
+                rot=(0.9347, 0.0, 0.0, -0.3554),  # 単位クォータニオン (w, x, y, z)。実機の取付姿勢が決まったら更新
                 convention="world"
             ),
             data_types=["rgb"],
-            spawn=sim_utils.PinholeCameraCfg(
-                focal_length=1.93, 
-                horizontal_aperture=2.14 * 640 / 360,
-                vertical_aperture=2.14,  
+            spawn=sim_utils.PinholeCameraCfg.from_intrinsic_matrix(
+                intrinstic_matrix=return_camera_matrix(),
+                width=360, height=640,
                 clipping_range=(0.05, 1.5)),
             width=360, height=640,
         )

@@ -204,7 +204,10 @@ class RewardsCfg:
     )   
 
     # Neg Rew
+    object_displacement = RewTerm(func=mdp.object_displacement, weight=-30.0)
+
     finger_non_object_contact = RewTerm(func=mdp.finger_non_object_contact, params={"threshold": 1.0}, weight=-0.5)
+    
 
     # Objective rewards
 

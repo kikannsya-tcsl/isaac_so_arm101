@@ -64,3 +64,13 @@ class LiftBottleCameraPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 @configclass
 class LiftCubeCameraPPORunnerCfg(LiftBottleCameraPPORunnerCfg):
     experiment_name = "lift_cube_with_camera"
+    policy = RslRlPpoActorCriticCfg(
+            init_noise_std=1.0,
+            noise_std_type="log",
+            actor_hidden_dims=[512, 128, 64],
+            critic_hidden_dims=[512, 128, 64],
+            activation="elu",
+            # 凍結特徴はスケール無調整。ここを True にしないと PPO が壊れる
+            actor_obs_normalization=True,
+            critic_obs_normalization=True,
+        )

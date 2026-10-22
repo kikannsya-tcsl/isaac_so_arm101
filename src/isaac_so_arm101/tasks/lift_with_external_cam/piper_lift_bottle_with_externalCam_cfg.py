@@ -21,7 +21,7 @@ from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaac_so_arm101.tasks.lift_with_cam.piper_lift_bottle_with_externalCam import LiftEnvCfg
+from isaac_so_arm101.tasks.lift_with_external_cam.piper_lift_bottle_with_externalCam import LiftEnvCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 from isaac_so_arm101.robots.piper_description.piper import PIPER_CFG
 from isaac_so_arm101.model import MODEL_DIR
@@ -46,7 +46,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
                 horizontal_aperture=2.14 * 640 / 360,
                 vertical_aperture=2.14,  
                 clipping_range=(0.05, 1.5)),
-            width=360, height=640,
+            width=640, height=360,
             depth_clipping_behavior="max",
         )
 
@@ -63,7 +63,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
                 intrinstic_matrix=return_camera_matrix(),
                 width=360, height=640,
                 clipping_range=(0.05, 1.5)),
-            width=360, height=640,
+            width=640, height=360,
         )
 
         # override actions
@@ -114,7 +114,7 @@ class PiperLiftCubeEnvCfg(LiftEnvCfg):
         marker_cfg.prim_path = "/Visuals/FrameTransformer"
         self.scene.ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/arm_base",
-            debug_vis=True,
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
